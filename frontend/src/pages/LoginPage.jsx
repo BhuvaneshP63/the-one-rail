@@ -45,7 +45,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="mb-6 p-3.5 bg-red-50 border border-red-100 text-sm text-[#C51E3A] rounded-md font-medium">
+            <div role="alert" className="mb-6 p-3.5 bg-red-50 border border-red-100 text-sm text-red-700 rounded-xl font-medium">
               {error}
             </div>
           )}
@@ -53,13 +53,15 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Field */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Email Address</label>
+              <label htmlFor="login-email" className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Email Address</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                   <Mail className="h-5 w-5" />
                 </div>
                 <input
+                  id="login-email"
                   type="email"
+                  autoComplete="email"
                   className="form-input pl-10"
                   placeholder="name@example.com"
                   value={email}
@@ -72,8 +74,8 @@ export default function LoginPage() {
             {/* Password Field */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center">
-                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Password</label>
-                <Link to="/forgot-password" className="text-xs font-semibold text-[#C51E3A] hover:underline">
+                <label htmlFor="login-password" className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Password</label>
+                <Link to="/forgot-password" className="text-xs font-semibold text-[#0f766e] hover:underline">
                   Forgot Password?
                 </Link>
               </div>
@@ -82,7 +84,9 @@ export default function LoginPage() {
                   <Lock className="h-5 w-5" />
                 </div>
                 <input
+                  id="login-password"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
                   className="form-input pl-10 pr-10"
                   placeholder="••••••••"
                   value={password}
@@ -92,6 +96,8 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -126,7 +132,7 @@ export default function LoginPage() {
           <div className="mt-8 pt-6 border-t border-slate-100 text-center">
             <p className="text-sm text-slate-500">
               Don't have an account?{' '}
-              <Link to="/register" className="font-semibold text-[#C51E3A] hover:underline">
+              <Link to="/register" className="font-semibold text-[#0f766e] hover:underline">
                 Create Account
               </Link>
             </p>

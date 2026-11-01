@@ -4,6 +4,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
+const { releaseExpiredHolds } = require('./utils/coachInventory');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -16,6 +17,8 @@ const app = express();
 
 // Connect to Database
 connectDB();
+const holdCleanup = setInterval(() => releaseExpiredHolds().catch(error => console.error('Seat hold cleanup failed:', error.message)), 60 * 1000);
+holdCleanup.unref();
 
 // Middleware
 app.use(cors({

@@ -97,8 +97,20 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const checkAuth = async () => {
+    if (!token) return null;
+    try {
+      const res = await axios.get('/api/auth/profile');
+      if (res.data.success) { setUser(res.data.user); return res.data.user; }
+      return null;
+    } catch {
+      logout();
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateProfile, setUser }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateProfile, checkAuth, setUser }}>
       {children}
     </AuthContext.Provider>
   );

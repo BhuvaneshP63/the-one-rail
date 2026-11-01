@@ -6,7 +6,8 @@ const passengerSchema = new mongoose.Schema({
   gender: { type: String, enum: ['Male', 'Female', 'Other'], required: true },
   coach: { type: String }, // e.g. S1
   seatNumber: { type: Number }, // e.g. 15
-  seatType: { type: String } // e.g. LB
+  seatType: { type: String }, // e.g. LB
+  preferredBerth: { type: String, enum: ['No preference', 'Lower Berth', 'Middle Berth', 'Upper Berth', 'Side Lower Berth', 'Side Upper Berth'], default: 'No preference' }
 });
 
 const bookingSchema = new mongoose.Schema({
@@ -21,9 +22,12 @@ const bookingSchema = new mongoose.Schema({
   boardingStation: { type: mongoose.Schema.Types.ObjectId, ref: 'Station', required: true },
   passengers: [passengerSchema],
   totalFare: { type: Number, required: true },
-  status: { type: String, enum: ['Confirmed', 'Cancelled'], default: 'Confirmed' },
+  holdId: { type: String },
+  fareBreakdown: { type: mongoose.Schema.Types.Mixed, default: {} },
+  simulated: { type: Boolean, default: true },
+  status: { type: String, enum: ['Pending', 'Confirmed', 'Cancelled'], default: 'Pending' },
   paymentStatus: { type: String, enum: ['Pending', 'Paid', 'Refunded'], default: 'Pending' },
-  paymentId: { type: String }, // Razorpay payment ID or mock txn ID
+  paymentId: { type: String }, // Simulated payment reference
   refundAmount: { type: Number, default: 0 },
   refundStatus: { type: String, enum: ['None', 'Initiated', 'Completed'], default: 'None' },
   createdAt: { type: Date, default: Date.now }

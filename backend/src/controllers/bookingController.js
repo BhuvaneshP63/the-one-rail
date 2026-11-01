@@ -1,25 +1,17 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-const Razorpay = require('razorpay');
 const Booking = require('../models/Booking');
 const Train = require('../models/Train');
 const Station = require('../models/Station');
 const Route = require('../models/Route');
 const Schedule = require('../models/Schedule');
+const SeatInventory = require('../models/SeatInventory');
 const Payment = require('../models/Payment');
 const Notification = require('../models/Notification');
-const { getOrCreateSchedule, allocateBookingSeats } = require('../utils/seatAllocator');
+const { releaseExpiredHolds } = require('../utils/coachInventory');
+const { calculateSampleFare } = require('../utils/sampleFare');
 const { generateTicketPDF } = require('../utils/pdfGenerator');
 const { sendTicketEmail } = require('../utils/mailer');
-
-// Initialize Razorpay if keys are available
-let razorpayInstance = null;
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-  razorpayInstance = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
-  });
-}
 
 // Generate PNR number (10 digits)
 const generatePNR = () => {
@@ -31,21 +23,32 @@ const generateBookingID = () => {
   return 'BK' + crypto.randomBytes(3).toString('hex').toUpperCase();
 };
 
-// @desc    Create a pending booking & Razorpay order
+// @desc    Create a pending booking and simulated payment order
 // @route   POST /api/bookings/create
 // @access  Private
 exports.createBookingOrder = async (req, res) => {
   try {
-    const { trainId, date, seatClass, fromStation, toStation, boardingStation, passengers } = req.body;
+    const { trainId, date, seatClass, fromStation, toStation, boardingStation, passengers, holdId, seats } = req.body;
 
-    if (!trainId || !date || !seatClass || !fromStation || !toStation || !boardingStation || !passengers || passengers.length === 0) {
+    if (!trainId || !date || !seatClass || !fromStation || !toStation || !boardingStation || !Array.isArray(passengers) || passengers.length === 0 || passengers.length > 6 || !holdId || !Array.isArray(seats) || seats.length !== passengers.length) {
       return res.status(400).json({ success: false, message: 'All booking fields and passenger list are required' });
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < new Date().toISOString().slice(0, 10)) return res.status(400).json({ success: false, message: 'Choose a valid journey date that is not in the past.' });
+    if (passengers.some(p => !p.name?.trim() || !Number.isInteger(Number(p.age)) || Number(p.age) < 1 || Number(p.age) > 120 || !['Male', 'Female', 'Other'].includes(p.gender)) || new Set(seats.map(s => `${s.coach}/${s.seatNumber}`)).size !== passengers.length) return res.status(400).json({ success: false, message: 'Passenger details and unique seat selections must be valid.' });
+    const validPreferences = ['No preference', 'Lower Berth', 'Middle Berth', 'Upper Berth', 'Side Lower Berth', 'Side Upper Berth'];
+    if (passengers.some(p => p.preferredBerth && !validPreferences.includes(p.preferredBerth)) || ['CC', '2S'].includes(seatClass) && passengers.some(p => p.preferredBerth && p.preferredBerth !== 'No preference')) return res.status(400).json({ success: false, message: 'Berth preferences are available only for sleeping classes.' });
+
+    await releaseExpiredHolds({ train: trainId, date, seatClass });
+    const heldSeats = await SeatInventory.find({ train: trainId, date, seatClass, holdId, holdBy: req.user._id, status: 'HELD', holdExpiresAt: { $gt: new Date() } });
+    if (heldSeats.length !== passengers.length || seats.some(s => !heldSeats.some(h => h.coach === s.coach && h.seatNumber === Number(s.seatNumber)))) return res.status(409).json({ success: false, message: 'Your seat hold expired or no longer matches. Select seats again.' });
 
     const train = await Train.findById(trainId);
     if (!train) {
       return res.status(404).json({ success: false, message: 'Train not found' });
     }
+    const [journeyYear, journeyMonth, journeyDate] = date.split('-').map(Number);
+    const journeyWeekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(Date.UTC(journeyYear, journeyMonth - 1, journeyDate)).getUTCDay()];
+    if (!train.runsOn.includes(journeyWeekday)) return res.status(400).json({ success: false, message: 'This sample train does not run on the selected day.' });
 
     const route = await Route.findOne({ train: trainId });
     if (!route) {
@@ -67,38 +70,14 @@ exports.createBookingOrder = async (req, res) => {
     // 1. Calculate fare
     const distance = toStop.distanceKm - fromStop.distanceKm;
     const multiplier = train.baseFare[seatClass] || 1.5;
-    const baseFare = Math.max(50, Math.round(distance * multiplier * 0.1) * 10);
+    const baseFare = calculateSampleFare(distance, multiplier);
     const totalFare = baseFare * passengers.length;
 
-    // 2. Pre-verify seat availability on the segment
-    const schedule = await getOrCreateSchedule(trainId, date, train.classes);
-    const availableSeats = await allocateBookingSeats(
-      schedule,
-      seatClass,
-      fromStop.stopIndex,
-      toStop.stopIndex,
-      passengers.length
-    );
+    // Seat availability is managed in the local seat inventory collection.
+    if (!train.classes.includes(seatClass)) return res.status(400).json({ success: false, message: 'This class is not offered on this train.' });
 
-    if (!availableSeats) {
-      return res.status(400).json({ success: false, message: 'Not enough seats available for this class on this segment' });
-    }
-
-    // 3. Generate Razorpay Order or Mock details
-    let razorpayOrderId = 'order_mock_' + crypto.randomBytes(6).toString('hex');
-    if (razorpayInstance) {
-      try {
-        const options = {
-          amount: totalFare * 100, // amount in paisa
-          currency: 'INR',
-          receipt: `receipt_${generateBookingID()}`
-        };
-        const order = await razorpayInstance.orders.create(options);
-        razorpayOrderId = order.id;
-      } catch (err) {
-        console.error('Razorpay Order Creation Error. Falling back to Mock Order.', err.message);
-      }
-    }
+    // Payments are simulated in this demonstration.
+    const razorpayOrderId = 'order_mock_' + crypto.randomBytes(6).toString('hex');
 
     // 4. Create pending booking record
     const pnr = generatePNR();
@@ -118,14 +97,17 @@ exports.createBookingOrder = async (req, res) => {
         name: p.name,
         age: p.age,
         gender: p.gender,
-        coach: 'Pending',
-        seatNumber: 0,
-        seatType: 'None'
+        coach: seats[passengers.indexOf(p)].coach,
+        seatNumber: Number(seats[passengers.indexOf(p)].seatNumber),
+        seatType: heldSeats.find(h => h.coach === seats[passengers.indexOf(p)].coach && h.seatNumber === Number(seats[passengers.indexOf(p)].seatNumber))?.seatType || 'Seat',
+        preferredBerth: p.preferredBerth || 'No preference'
       })),
       totalFare,
-      status: 'Confirmed', // Created as confirmed but pending payment
+      holdId,
+      fareBreakdown: { class: seatClass, farePerPassenger: baseFare, passengerCount: passengers.length, total: totalFare },
+      status: 'Pending',
       paymentStatus: 'Pending',
-      paymentId: razorpayOrderId // Store Razorpay Order ID here temporarily
+      paymentId: razorpayOrderId // Temporary simulated order reference
     });
 
     await booking.save();
@@ -168,67 +150,32 @@ exports.verifyPaymentAndAllocate = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Booking not found' });
     }
 
+    if (booking.paymentId !== orderId) return res.status(400).json({ success: false, message: 'Payment order does not match this booking.' });
+
+    if (booking.user._id.toString() !== req.user._id.toString() && req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Not authorized to confirm this booking.' });
+
     if (booking.paymentStatus === 'Paid') {
       return res.status(400).json({ success: false, message: 'This booking has already been paid and processed' });
     }
 
-    // 2. Signature verification (if Razorpay credentials exist and it is not a mock order)
-    if (razorpayInstance && !orderId.startsWith('order_mock_')) {
-      const text = orderId + '|' + paymentId;
-      const expectedSignature = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-        .update(text)
-        .digest('hex');
+    if (!orderId.startsWith('order_mock_')) return res.status(400).json({ success: false, message: 'Only simulated payment orders are supported.' });
 
-      if (expectedSignature !== signature) {
-        return res.status(400).json({ success: false, message: 'Razorpay payment signature verification failed' });
-      }
-    }
-
-    // 3. Allocate seats from the Schedule Segment
-    const route = await Route.findOne({ train: booking.train._id });
-    const fromStop = route.stops.find(s => s.station.toString() === booking.source._id.toString());
-    const toStop = route.stops.find(s => s.station.toString() === booking.destination._id.toString());
-
-    const schedule = await getOrCreateSchedule(booking.train._id, booking.date, booking.train.classes);
-    
-    // Concurrency Lock: Check if seats are still available
-    const allocatedSeats = await allocateBookingSeats(
-      schedule,
-      booking.seatClass,
-      fromStop.stopIndex,
-      toStop.stopIndex,
-      booking.passengers.length
+    // Confirm only the passenger's still-active holds. Conditional atomic updates prevent double booking.
+    const heldSeats = await SeatInventory.find({ train: booking.train._id, date: booking.date, seatClass: booking.seatClass, holdId: booking.holdId, holdBy: booking.user._id, status: 'HELD', holdExpiresAt: { $gt: new Date() } });
+    if (heldSeats.length !== booking.passengers.length) return res.status(409).json({ success: false, message: 'The seat hold expired. Please start a new booking.' });
+    const heldSeatIds = heldSeats.map(seat => seat._id);
+    const confirmation = await SeatInventory.updateMany(
+      { _id: { $in: heldSeatIds }, train: booking.train._id, date: booking.date, seatClass: booking.seatClass, status: 'HELD', holdId: booking.holdId, holdBy: booking.user._id, holdExpiresAt: { $gt: new Date() } },
+      { $set: { status: 'BOOKED', booking: booking._id }, $unset: { holdBy: 1, holdId: 1, holdExpiresAt: 1 } }
     );
-
-    if (!allocatedSeats) {
-      // Refund would be needed in real production, but here we error
-      booking.status = 'Cancelled';
-      await booking.save();
-      return res.status(400).json({ success: false, message: 'Seats are no longer available for this segment. Booking Cancelled.' });
+    if (confirmation.modifiedCount !== booking.passengers.length) {
+      await SeatInventory.updateMany({ _id: { $in: heldSeatIds }, booking: booking._id, status: 'BOOKED' }, { $set: { status: 'AVAILABLE' }, $unset: { booking: 1 } });
+      return res.status(409).json({ success: false, message: 'One or more selected seats are no longer available.' });
     }
-
-    // 4. Update schedule and assign seats to passengers
-    allocatedSeats.forEach((seat, idx) => {
-      // Add booking interval to the seat
-      seat.bookings.push({
-        bookingId: booking._id,
-        fromStopIndex: fromStop.stopIndex,
-        toStopIndex: toStop.stopIndex
-      });
-
-      // Update passenger detail
-      booking.passengers[idx].coach = seat.coach;
-      booking.passengers[idx].seatNumber = seat.seatNumber;
-      booking.passengers[idx].seatType = seat.seatType;
-    });
-
-    // Save schedule changes
-    schedule.markModified('seats');
-    await schedule.save();
 
     // 5. Update booking status
     booking.paymentStatus = 'Paid';
+    booking.status = 'Confirmed';
     booking.paymentId = paymentId || 'MOCK_TXN_' + crypto.randomBytes(5).toString('hex').toUpperCase();
     await booking.save();
 
@@ -247,7 +194,7 @@ exports.verifyPaymentAndAllocate = async (req, res) => {
     // 7. Add notification
     const notification = new Notification({
       user: booking.user._id,
-      title: 'Ticket Booked Successfully',
+      title: 'Sample reservation confirmed',
       message: `Your booking for Train ${booking.train.trainNumber} on ${booking.date} is confirmed. PNR: ${booking.pnr}. Coach: ${booking.passengers[0].coach}, Seats: ${booking.passengers.map(p => p.seatNumber).join(', ')}.`,
       type: 'Booking'
     });
@@ -274,7 +221,7 @@ exports.verifyPaymentAndAllocate = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Booking confirmed and seats allocated successfully',
+      message: 'Simulated booking confirmed with the selected sample seats.',
       booking
     });
   } catch (error) {
@@ -305,24 +252,32 @@ exports.cancelBooking = async (req, res) => {
     if (booking.status === 'Cancelled') {
       return res.status(400).json({ success: false, message: 'Booking is already cancelled' });
     }
+    if (booking.status !== 'Confirmed') return res.status(400).json({ success: false, message: 'Only confirmed bookings can be cancelled.' });
+    const cancellationClaim = await Booking.updateOne({ _id: booking._id, status: 'Confirmed' }, { $set: { status: 'Cancelled' } });
+    if (cancellationClaim.modifiedCount !== 1) return res.status(409).json({ success: false, message: 'Booking status changed. Refresh and try again.' });
+    booking.status = 'Cancelled';
 
     // 1. Release seats in Schedule
-    const route = await Route.findOne({ train: booking.train._id });
-    const fromStop = route.stops.find(s => s.station.toString() === booking.source._id.toString());
-    const toStop = route.stops.find(s => s.station.toString() === booking.destination._id.toString());
-
     const schedule = await Schedule.findOne({ train: booking.train._id, date: booking.date });
+    const legacyReleasedSeats = [];
     
     if (schedule) {
       // Find each seat assigned to this booking and remove the booking index
       schedule.seats.forEach(seat => {
         if (seat.classType === booking.seatClass) {
+          const hadThisBooking = seat.bookings.some(b => b.bookingId.toString() === booking._id.toString());
           seat.bookings = seat.bookings.filter(b => b.bookingId.toString() !== booking._id.toString());
+          if (hadThisBooking && seat.bookings.length === 0) legacyReleasedSeats.push({ coach: seat.coach, seatNumber: seat.seatNumber });
         }
       });
       schedule.markModified('seats');
       await schedule.save();
     }
+    await SeatInventory.updateMany({ booking: booking._id, status: 'BOOKED' }, { $set: { status: 'AVAILABLE' }, $unset: { booking: 1 } });
+    if (legacyReleasedSeats.length) await SeatInventory.bulkWrite(legacyReleasedSeats.map(seat => ({ updateOne: {
+      filter: { train: booking.train._id, date: booking.date, seatClass: booking.seatClass, coach: seat.coach, seatNumber: seat.seatNumber, status: 'BOOKED', booking: { $exists: false } },
+      update: { $set: { status: 'AVAILABLE' } }
+    } })));
 
     // 2. Calculate refund (15% deduction, min charge Rs 60 per passenger)
     const deduction = Math.max(60 * booking.passengers.length, booking.totalFare * 0.15);
@@ -339,14 +294,14 @@ exports.cancelBooking = async (req, res) => {
     const notification = new Notification({
       user: booking.user._id,
       title: 'Booking Cancelled',
-      message: `Your booking for Train ${booking.train.trainNumber} has been cancelled. Refund of Rs. ${refundAmount.toFixed(2)} processed to original source. PNR: ${booking.pnr}.`,
+      message: `Your simulated booking for Train ${booking.train.trainNumber} has been cancelled. Simulated refund: Rs. ${refundAmount.toFixed(2)}. PNR: ${booking.pnr}.`,
       type: 'Cancellation'
     });
     await notification.save();
 
     res.json({
       success: true,
-      message: 'Booking cancelled successfully and refund initiated',
+      message: 'Simulated booking cancelled and sample seats released.',
       refundDetails: {
         totalPaid: booking.totalFare,
         cancellationCharges: deduction,
@@ -445,6 +400,8 @@ exports.checkPnrStatus = async (req, res) => {
     if (!booking) {
       return res.status(404).json({ success: false, message: 'No booking found for this PNR' });
     }
+
+    if (booking.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Sign in with the booking account to view this simulated PNR.' });
 
     res.json({ success: true, booking });
   } catch (error) {

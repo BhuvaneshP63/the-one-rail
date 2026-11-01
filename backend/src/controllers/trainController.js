@@ -4,10 +4,15 @@ const Train = require('../models/Train');
 const Route = require('../models/Route');
 const Review = require('../models/Review');
 const { checkAvailability } = require('../utils/seatAllocator');
+const SeatInventory = require('../models/SeatInventory');
+const { ensureInventory, releaseExpiredHolds } = require('../utils/coachInventory');
+const { getTrainDataProvider } = require('../services/trainDataProvider');
+const { calculateSampleFare } = require('../utils/sampleFare');
 
 // Get day name from date string
 const getDayName = (dateStr) => {
-  const date = new Date(dateStr);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   return days[date.getDay()];
 };
@@ -36,18 +41,24 @@ exports.autocompleteStations = async (req, res) => {
     if (!query) {
       return res.json([]);
     }
+    if (typeof query !== 'string' || query.length > 80) return res.status(400).json({ success: false, message: 'Station query is invalid.' });
+    const provider = getTrainDataProvider();
+    if (typeof provider.autocompleteStations === 'function') {
+      return res.json(await provider.autocompleteStations(query.trim()));
+    }
+    const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     const stations = await Station.find({
       $or: [
-        { code: { $regex: query, $options: 'i' } },
-        { name: { $regex: query, $options: 'i' } },
-        { state: { $regex: query, $options: 'i' } }
+        { code: { $regex: safeQuery, $options: 'i' } },
+        { name: { $regex: safeQuery, $options: 'i' } },
+        { state: { $regex: safeQuery, $options: 'i' } }
       ]
     }).limit(10);
 
     res.json(stations);
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.status && error.status < 500 ? error.status : 502).json({ success: false, message: error.message });
   }
 };
 
@@ -62,6 +73,56 @@ exports.searchTrains = async (req, res) => {
       return res.status(400).json({ success: false, message: 'From, To and Date are required query parameters' });
     }
 
+    const provider = getTrainDataProvider();
+    if (typeof provider.autocompleteStations === 'function') {
+      const stationCode = async value => {
+        if (/^[A-Za-z0-9]{2,8}$/.test(value)) return value.toUpperCase();
+        if (mongoose.Types.ObjectId.isValid(value)) {
+          const station = await Station.findById(value).select('code');
+          if (station) return station.code;
+        }
+        return null;
+      };
+      const [fromCode, toCode] = await Promise.all([stationCode(from), stationCode(to)]);
+      if (!fromCode || !toCode) return res.status(400).json({ success: false, message: 'Choose source and destination from the railway station suggestions.' });
+      const fromStation = await provider.autocompleteStations(fromCode);
+      const toStation = await provider.autocompleteStations(toCode);
+      const sourceStation = fromStation.find(station => station.code === fromCode);
+      const destinationStation = toStation.find(station => station.code === toCode);
+      if (!sourceStation || !destinationStation) return res.status(404).json({ success: false, message: 'Railway station code was not found by the timetable provider.' });
+      const records = await provider.findTrainsBetweenStations({ from: fromCode, to: toCode, date });
+      const formatDuration = minutes => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+      const trains = records.map(train => ({
+        trainId: `external:${train.trainNumber}`,
+        trainNumber: train.trainNumber,
+        name: train.name,
+        trainType: train.type,
+        source: sourceStation.name,
+        sourceCode: fromCode,
+        destination: destinationStation.name,
+        destinationCode: toCode,
+        boardingStation: { id: fromCode, name: sourceStation.name, code: fromCode, departureTime: train.departureTime, arrivalTime: train.departureTime, stopIndex: 0 },
+        deboardingStation: { id: toCode, name: destinationStation.name, code: toCode, departureTime: train.arrivalTime, arrivalTime: train.arrivalTime, stopIndex: train.totalHalts },
+        duration: train.durationMinutes ? formatDuration(train.durationMinutes) : 'Schedule duration unavailable',
+        runningDays: train.runningDays,
+        classes: [],
+        dataSource: 'railradar',
+        dataSourceLabel: provider.sourceLabel,
+        availabilityLabel: 'Not supplied by timetable data',
+        classDetails: {},
+        bookable: false,
+        distanceKm: train.distanceKm,
+        totalHalts: train.totalHalts
+      }));
+      return res.json({
+        success: true,
+        searchCriteria: { from: sourceStation.name, to: destinationStation.name, date },
+        trainsCount: trains.length,
+        dataSource: provider.sourceLabel,
+        trains
+      });
+    }
+
     // 1. Resolve source and destination stations (accept code or ObjectId)
     const fromStation = await Station.findOne({ $or: [{ code: from.toUpperCase() }, { _id: mongoose.Types.ObjectId.isValid(from) ? from : null }] });
     const toStation = await Station.findOne({ $or: [{ code: to.toUpperCase() }, { _id: mongoose.Types.ObjectId.isValid(to) ? to : null }] });
@@ -74,15 +135,8 @@ exports.searchTrains = async (req, res) => {
     const reqDay = getDayName(date);
 
     // 2. Fetch routes and filter trains that go from -> to
-    const routes = await Route.find()
-      .populate({
-        path: 'train',
-        populate: [
-          { path: 'source' },
-          { path: 'destination' }
-        ]
-      })
-      .populate('stops.station');
+    const routes = await getTrainDataProvider().findTrainsBetweenStations({ route: {} });
+    await Promise.all(routes.map(route => route.train?.populate(['source', 'destination'])));
 
     const matchingTrains = [];
 
@@ -104,19 +158,17 @@ exports.searchTrains = async (req, res) => {
         const availabilityAndFares = {};
         
         for (const cls of train.classes) {
-          const avail = await checkAvailability(
-            train._id,
-            date,
-            cls,
-            fromStop.stopIndex,
-            toStop.stopIndex,
-            train.classes
-          );
+          await ensureInventory(train, date, cls);
+          await releaseExpiredHolds({ train: train._id, date, seatClass: cls });
+          const inventory = await SeatInventory.aggregate([
+            { $match: { train: train._id, date, seatClass: cls } },
+            { $group: { _id: null, totalSeats: { $sum: 1 }, availableSeats: { $sum: { $cond: [{ $eq: ['$status', 'AVAILABLE'] }, 1, 0] } } } }
+          ]);
+          const avail = inventory[0] || { totalSeats: 0, availableSeats: 0 };
 
           // Calculate fare: base fare rate per class * distance (min. Rs 50)
           const multiplier = train.baseFare[cls] || 1.5;
-          const rawFare = Math.round(distance * multiplier * 0.1) * 10; // Round to nearest 10
-          const fare = Math.max(50, rawFare);
+          const fare = calculateSampleFare(distance, multiplier);
 
           availabilityAndFares[cls] = {
             availableSeats: avail.availableSeats,
@@ -165,6 +217,8 @@ exports.searchTrains = async (req, res) => {
           ),
           runningDays: train.runsOn,
           classes: train.classes,
+          dataSource: train.dataSource || 'sample',
+          availabilityLabel: 'Simulated sample inventory',
           classDetails: availabilityAndFares,
           rating,
           reviewsCount
@@ -184,7 +238,7 @@ exports.searchTrains = async (req, res) => {
       trains: matchingTrains
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.status && error.status < 500 ? error.status : 502).json({ success: false, message: error.message });
   }
 };
 
@@ -219,6 +273,30 @@ exports.getReviews = async (req, res) => {
     res.json({ success: true, reviews });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getTrainDirectory = async (req, res) => {
+  try {
+    const provider = getTrainDataProvider();
+    if (typeof provider.getTrainDirectory === 'function') {
+      return res.json({ success: true, dataSource: provider.sourceLabel, trains: await provider.getTrainDirectory() });
+    }
+    const trains = await Train.find({ active: true }).select('trainNumber name source destination dataSource').populate('source destination', 'code name').sort({ trainNumber: 1 });
+    return res.json({ success: true, dataSource: 'Local sample train directory', trains });
+  } catch (error) {
+    return res.status(error.status && error.status < 500 ? error.status : 502).json({ success: false, message: error.message });
+  }
+};
+
+exports.getProviderSchedule = async (req, res) => {
+  try {
+    const provider = getTrainDataProvider();
+    if (typeof provider.getSchedule !== 'function') return res.status(404).json({ success: false, message: 'External train schedules are not enabled.' });
+    if (!/^\d{4,6}$/.test(req.params.trainNumber)) return res.status(400).json({ success: false, message: 'Train number is invalid.' });
+    return res.json({ success: true, dataSource: provider.sourceLabel, schedule: await provider.getSchedule(req.params.trainNumber) });
+  } catch (error) {
+    return res.status(error.status && error.status < 500 ? error.status : 502).json({ success: false, message: error.message });
   }
 };
 

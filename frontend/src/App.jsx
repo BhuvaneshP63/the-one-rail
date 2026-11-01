@@ -14,6 +14,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import LandingPage from './pages/LandingPage';
 import SearchResultsPage from './pages/SearchResultsPage';
 import BookingPage from './pages/BookingPage';
+import BookingConfirmationPage from './pages/BookingConfirmationPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -28,10 +29,10 @@ function App() {
     <Router>
       <AuthProvider>
         <BookingProvider>
-          <div className="flex flex-col min-h-screen bg-slate-50 font-sans text-slate-900">
+          <div className="flex flex-col min-h-screen bg-[#f2efe8] font-sans text-slate-900">
             <Navbar />
             
-            <main className="flex-grow pt-16">
+            <main className="flex-grow">
               <Routes>
                 {/* Public Routes */}
                 <Route path="/" element={<LandingPage />} />
@@ -44,6 +45,7 @@ function App() {
 
                 {/* Protected User Routes */}
                 <Route path="/booking" element={<ProtectedRoute><BookingPage /></ProtectedRoute>} />
+                <Route path="/booking/confirmation/:id" element={<ProtectedRoute><BookingConfirmationPage /></ProtectedRoute>} />
                 <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
 

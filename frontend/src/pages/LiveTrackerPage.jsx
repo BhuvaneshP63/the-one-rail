@@ -53,12 +53,12 @@ export default function LiveTrackerPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Search Header */}
-        <div className="bg-[#1e293b] rounded-xl shadow-lg p-6 mb-8 text-white flex flex-col md:flex-row md:items-center justify-between">
+        <div className="bg-[#103f3b] rounded-2xl shadow-lg p-6 mb-8 text-white flex flex-col md:flex-row md:items-center justify-between">
           <div className="mb-4 md:mb-0">
             <h1 className="text-2xl font-bold font-heading flex items-center">
-              <Navigation className="h-6 w-6 mr-2 text-[#C51E3A]" /> Live Train Tracker
+              <Navigation className="h-6 w-6 mr-2 text-[#d8ef73]" /> Sample Train Tracker
             </h1>
-            <p className="text-slate-400 text-sm mt-1">Real-time GPS running status</p>
+            <p className="text-slate-400 text-sm mt-1">Simulated route progress · not a live railway feed</p>
           </div>
           
           <form onSubmit={handleSearch} className="flex space-x-2 w-full md:w-auto">
@@ -84,11 +84,11 @@ export default function LiveTrackerPage() {
         </div>
 
         {loading && !trackerData && (
-          <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-[#C51E3A]" /></div>
+          <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-[#0f766e]" /></div>
         )}
 
         {error && (
-          <div className="bg-red-50 text-[#C51E3A] p-4 rounded-lg border border-red-100 flex items-center space-x-2">
+          <div role="alert" className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 flex items-center space-x-2">
             <AlertTriangle className="h-5 w-5" />
             <span>{error}</span>
           </div>
@@ -138,7 +138,7 @@ export default function LiveTrackerPage() {
                 </div>
                 <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden relative">
                   <div 
-                    className="h-full bg-gradient-to-r from-red-500 to-[#C51E3A] rounded-full transition-all duration-1000 ease-out"
+                    className="h-full bg-gradient-to-r from-red-500 to-[#0f766e] rounded-full transition-all duration-1000 ease-out"
                     style={{ width: `${trackerData.progressPercentage}%` }}
                   ></div>
                 </div>
@@ -146,10 +146,10 @@ export default function LiveTrackerPage() {
                   className="absolute top-4 -ml-3 transition-all duration-1000 ease-out"
                   style={{ left: `${trackerData.progressPercentage}%` }}
                 >
-                  <div className="bg-[#1e293b] text-white text-[10px] px-2 py-0.5 rounded shadow-lg whitespace-nowrap mb-1">
+                  <div className="bg-[#103f3b] text-white text-[10px] px-2 py-0.5 rounded shadow-lg whitespace-nowrap mb-1">
                     {trackerData.progressPercentage.toFixed(1)}%
                   </div>
-                  <Navigation className="h-6 w-6 text-[#1e293b] fill-current -ml-1 transform rotate-90" />
+                  <Navigation className="h-6 w-6 text-[#103f3b] fill-current -ml-1 transform rotate-90" />
                 </div>
               </div>
             </div>
@@ -169,15 +169,15 @@ export default function LiveTrackerPage() {
                   const isNext = trackerData.nextStation?.station?._id === stop.station._id;
 
                   return (
-                    <div key={stop._id} className={`relative z-10 flex items-start py-4 ${isPassed ? 'opacity-50' : ''} ${isNext ? 'bg-red-50 -mx-6 px-6 rounded-lg border-y border-red-100' : ''}`}>
-                      <div className={`w-12 h-12 rounded-full border-4 border-white flex items-center justify-center flex-shrink-0 shadow-sm ${isNext ? 'bg-[#C51E3A]' : isPassed ? 'bg-slate-400' : 'bg-slate-200'}`}>
+                    <div key={stop._id} className={`relative z-10 flex items-start py-4 ${isPassed ? 'opacity-50' : ''} ${isNext ? 'bg-teal-50 -mx-6 px-6 rounded-xl border-y border-teal-100' : ''}`}>
+                      <div className={`w-12 h-12 rounded-full border-4 border-white flex items-center justify-center flex-shrink-0 shadow-sm ${isNext ? 'bg-[#0f766e]' : isPassed ? 'bg-slate-400' : 'bg-slate-200'}`}>
                         <MapPin className={`h-5 w-5 ${isNext ? 'text-white' : 'text-white'}`} />
                       </div>
                       
                       <div className="ml-4 flex-1">
                         <div className="flex justify-between items-start">
                           <div>
-                            <h4 className={`font-bold ${isNext ? 'text-[#C51E3A]' : 'text-slate-800'}`}>{stop.station.name}</h4>
+                            <h4 className={`font-bold ${isNext ? 'text-[#0f766e]' : 'text-slate-800'}`}>{stop.station.name}</h4>
                             <p className="text-xs font-semibold text-slate-500">{stop.station.code}</p>
                           </div>
                           <div className="text-right">

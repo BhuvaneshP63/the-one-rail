@@ -1,6 +1,21 @@
+# Dependencies
 node_modules/
-dist/
+
+# Environment variables
 .env
+.env.*
+!.env.example
+
+# Build files
+dist/
+build/
+
+# Logs
 *.log
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# Codex build files
+.codex-build/

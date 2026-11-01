@@ -1,4 +1,4 @@
-# Rail Yatra ⭐
+# The One Rail ⭐
 
 > **Experience luxury and speed with India's next-generation train booking system.**
 
@@ -24,7 +24,7 @@
 
 ## About the Project
 **Why we built it:** 
-Traditional train booking platforms can often be clunky, slow, and lack modern UI/UX features. Rail Yatra was built to solve this by providing a hyper-fast, seamless, and visually stunning train reservation experience.
+The One Rail is a modern train reservation demonstration with sample bookings and optional external timetable data.
 
 **What problem it solves:**
 It solves the complexity of segment-based seat allocation, live train tracking, and secure payment processing. By bringing all these elements under one premium UI, users don't have to guess seat availability or struggle with complex booking flows.
@@ -39,11 +39,11 @@ It solves the complexity of segment-based seat allocation, live train tracking, 
 - ✔ **User Authentication**
 - ✔ **JWT Login & Secure Hashing**
 - ✔ **Role Based Access (Admin/User)**
-- ✔ **Complex Segment-Based Seat Allocation**
+- ✔ **User-Selected Coach and Seat Reservations with Temporary Holds**
 - ✔ **Live GPS Train Tracking Simulation**
 - ✔ **Dynamic PDF Ticket Generation**
 - ✔ **Interactive Dashboard & Booking History**
-- ✔ **Automated Mock Payment Gateway / Razorpay Integration**
+- ✔ **Simulated Checkout, PNR, Availability, and Fare Estimates**
 - ✔ **Search & Filtering (by Station, Date, Class)**
 - ✔ **Cancel & Refund Management**
 - ✔ **Responsive, Mobile-first Premium Design**
@@ -94,7 +94,7 @@ graph TD;
     ExpressAPI-->|JWT Verification| AuthMiddleware[Auth Middleware];
     AuthMiddleware-->|Mongoose queries| MongoDB[(MongoDB)];
     ExpressAPI-->|PDF Generation| PDFKit[PDFKit];
-    ExpressAPI-->|Payment Verification| Razorpay[Razorpay/Mock Gateway];
+    ExpressAPI-->|Simulated payment confirmation| LocalBooking[Local Reservation Data];
 ```
 
 ---
@@ -149,6 +149,19 @@ npm install
 
 ---
 
+## Testing
+
+Run the isolated unit suites from each application folder with `npm test`. The booking smoke check exercises registration, login, sample search, concurrent seat holds, confirmation, PNR, PDF download, cancellation, and seat release. It requires a dedicated MongoDB database whose name ends in `_test`, plus an API instance connected to that same database:
+
+```env
+MONGODB_TEST_URI=mongodb://localhost:27017/the_one_rail_test
+TEST_API_BASE_URL=http://localhost:5000/api
+```
+
+Set the backend API instance’s `MONGODB_URI` to the same test-only URI before running `npm run test:smoke`. The script refuses a database name without the `_test` suffix and never uses the normal `MONGODB_URI` as its cleanup connection.
+
+---
+
 ## Running the Project
 
 **1. Start the Backend:**
@@ -165,6 +178,15 @@ npm run dev
 ```
 *Frontend runs on http://localhost:5173*
 
+**Add sample train data safely:**
+```bash
+cd backend
+npm run seed:sample
+```
+This command inserts only missing sample stations, trains, and routes. It does not replace or delete existing records. `npm run seed` is the legacy full reset script and deletes existing collections; do not use it when you need to preserve data.
+
+With the default sample provider, train schedules, fares, seats, payments, and PNRs are simulated information, not verified live railway or IRCTC data. External timetable mode is described below; it does not make seats, fares, payments, or PNRs real. The generated PDF is a project reservation and is not valid for travel. Seat inventory is local application data, separate from the timetable provider.
+
 ---
 
 ## Environment Variables
@@ -175,13 +197,17 @@ Never upload your `.env` file to version control. Create a `.env` in the `backen
 PORT=5000
 MONGODB_URI=mongodb://127.0.0.1:27017/train_booking
 JWT_SECRET=your_super_secret_jwt_key
-RAZORPAY_KEY_ID=optional_live_key
-RAZORPAY_KEY_SECRET=optional_live_secret
+SEAT_HOLD_MINUTES=8
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your_email@gmail.com
 SMTP_PASS=your_app_password
 FRONTEND_URL=http://localhost:5173
+```
+
+Optional frontend setting in `frontend/.env`:
+```env
+VITE_SENIOR_CITIZEN_AGE=60
 ```
 
 ---
@@ -200,7 +226,10 @@ FRONTEND_URL=http://localhost:5173
 
 ### Bookings
 - `POST /api/bookings/create` - Create a pending order
-- `POST /api/bookings/verify` - Verify payment and allocate seats
+- `GET /api/bookings/coaches?trainId=...&date=YYYY-MM-DD&seatClass=SL` - List local sample coaches
+- `GET /api/bookings/coaches/:coach/seats?...` - View a coach layout
+- `POST /api/bookings/hold` - Temporarily hold selected seats (authenticated)
+- `POST /api/bookings/verify` - Confirm a simulated payment and the exact held seats
 - `GET /api/bookings/history` - Get user's bookings
 - `GET /api/bookings/:id/download` - Download PDF Ticket
 - `POST /api/bookings/:id/cancel` - Cancel ticket and process refund
@@ -212,9 +241,10 @@ FRONTEND_URL=http://localhost:5173
 **Collections:**
 - **Users**: `_id`, `name`, `email`, `password`, `phone`, `role`, `savedTravellers`
 - **Stations**: `_id`, `code`, `name`, `state`, `zone`
-- **Trains**: `_id`, `trainNumber`, `name`, `source`, `destination`, `classes`, `baseFare`, `runsOn`
+- **Trains**: `_id`, `trainNumber`, `name`, `source`, `destination`, `classes`, `coachComposition`, `baseFare`, `runsOn`, `dataSource`
 - **Routes**: `_id`, `train`, `stops` (`station`, `arrivalTime`, `departureTime`, `distanceKm`, `dayNumber`)
 - **Bookings**: `_id`, `user`, `train`, `pnr`, `date`, `seatClass`, `passengers`, `totalFare`, `status`, `paymentId`
+- **SeatInventories**: unique train/date/class/coach/seat entries with AVAILABLE, HELD, and BOOKED states
 - **Reviews**: `_id`, `user`, `train`, `rating`, `comment`
 
 ---
@@ -238,6 +268,17 @@ FRONTEND_URL=http://localhost:5173
 - **Database**: Hosted on [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
 
 *(Refer to `deployment_guide.md` for complete step-by-step instructions).*
+
+## Railway timetable data provider
+
+The app defaults to its clearly labelled sample timetable. To search externally supplied Indian train schedules, set these values in the **backend** environment:
+
+```env
+TRAIN_DATA_PROVIDER=railradar
+RAILRADAR_API_KEY=your_server_side_provider_key
+```
+
+The external mode uses the RailRadar station directory and trains-between-stations timetable API; `GET /api/trains/directory` exposes its reserved-train directory and `GET /api/trains/external/:trainNumber/schedule` returns an individual schedule. Keep the key on the server and never put it in a `VITE_` variable. External results are read-only timetable information: class, fare, and live seat availability are not inferred, and demo booking stays disabled for those results. Local sample train data and reservation inventory continue to work when `TRAIN_DATA_PROVIDER` is unset. The provider's schedule data is third-party information and should be checked against official railway sources before travel.
 
 ---
 

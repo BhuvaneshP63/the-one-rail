@@ -3,24 +3,24 @@ import { Train, ExternalLink, ShieldCheck } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="bg-slate-900 text-slate-300 border-t border-slate-800">
+    <footer className="site-footer border-t border-white/10">
       <div className="max-w-7xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           
           {/* Brand Info */}
           <div className="col-span-1 md:col-span-2 space-y-4">
             <div className="flex items-center space-x-2 text-white">
-              <Train className="h-6 w-6 text-[#ef4444]" />
+              <Train className="h-6 w-6 text-[#d8ef73]" />
               <span className="font-heading font-extrabold text-xl tracking-tight">
-                Rail Yatra
+                The One Rail
               </span>
             </div>
             <p className="text-sm text-slate-400 max-w-sm">
-              Experience luxury and speed with India's next-generation train booking system. Fully integrated segment seat allocation, secure payments, and dynamic live GPS tracking.
+              The One Rail is a train reservation demonstration with sample timetables, user-selected seats, and simulated booking status.
             </p>
             <div className="flex items-center space-x-2 text-xs text-slate-400">
               <ShieldCheck className="h-4 w-4 text-emerald-500" />
-              <span>Razorpay Verified Payment Gateway</span>
+              <span>Simulated payment only · no real charge</span>
             </div>
           </div>
 
@@ -50,7 +50,7 @@ export default function Footer() {
 
         {/* Bottom Bar */}
         <div className="mt-8 pt-8 border-t border-slate-800 flex flex-col md:flex-row justify-between items-center text-xs text-slate-500 space-y-4 md:space-y-0">
-          <p>© 2026 Rail Yatra booking.</p>
+          <p>© 2026 The One Rail booking demo.</p>
         </div>
       </div>
     </footer>

@@ -15,6 +15,13 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   profilePicture: { type: String, default: '' },
   savedTravellers: [savedTravellerSchema],
+  favoriteTrains: [{ type: String, trim: true }],
+  favoriteRoutes: [{
+    from: { type: String, required: true, uppercase: true, trim: true },
+    fromName: { type: String, required: true, trim: true },
+    to: { type: String, required: true, uppercase: true, trim: true },
+    toName: { type: String, required: true, trim: true }
+  }],
   resetPasswordOtp: { type: String },
   resetPasswordOtpExpires: { type: Date },
   createdAt: { type: Date, default: Date.now }

@@ -20,18 +20,18 @@ const sendTicketEmail = async (userEmail, userName, bookingDetails, pdfBuffer) =
     });
 
     const mailOptions = {
-      from: `"Rail Yatra Indian Railways" <${process.env.SMTP_USER}>`,
+      from: `"The One Rail" <${process.env.SMTP_USER}>`,
       to: userEmail,
-      subject: `Booking Confirmed: PNR ${bookingDetails.pnr} - Happy Journey!`,
+      subject: `Simulated reservation: PNR ${bookingDetails.pnr}`,
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #C51E3A; color: #fff; padding: 20px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px;">Booking Confirmed!</h1>
-            <p style="margin: 5px 0 0; font-size: 14px;">Thank you for booking with Indian Railways</p>
+            <h1 style="margin: 0; font-size: 24px;">Sample reservation confirmed</h1>
+            <p style="margin: 5px 0 0; font-size: 14px;">The One Rail · simulated project booking</p>
           </div>
           <div style="padding: 20px;">
             <p>Dear <strong>${userName}</strong>,</p>
-            <p>Your ticket has been successfully booked. Please find your electronic ticket attached as a PDF document.</p>
+            <p>Your simulated reservation is recorded. The attached project PDF is not issued by Indian Railways or IRCTC and is not valid for travel.</p>
             
             <div style="background-color: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #C51E3A;">Journey Summary</h3>
@@ -64,8 +64,7 @@ const sendTicketEmail = async (userEmail, userName, bookingDetails, pdfBuffer) =
             </div>
 
             <p style="font-size: 13px; color: #666;">
-              Please remember to carry a valid original photo identity proof during your journey. 
-              Have a safe and comfortable trip!
+              Train data, PNR, seat availability, payment and this reservation are simulated sample information.
             </p>
           </div>
           <div style="background-color: #f9fafb; padding: 15px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #e5e7eb;">

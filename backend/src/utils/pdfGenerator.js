@@ -27,16 +27,16 @@ const generateTicketPDF = async (booking) => {
       const qrCodeDataUrl = await QRCode.toDataURL(qrPayload);
 
       // Title & Branding Header
-      doc.fillColor('#C51E3A')
+      doc.fillColor('#103f3b')
          .rect(0, 0, 595.28, 80) // Header band
          .fill();
 
       doc.fillColor('#FFFFFF')
          .fontSize(22)
-         .text('INDIAN RAILWAYS E-TICKET', 40, 28, { characterSpacing: 1 });
+         .text('THE ONE RAIL · SIMULATED RESERVATION', 40, 28, { characterSpacing: 0.5 });
       
       doc.fontSize(10)
-         .text('NATIONAL PASSENGER RESERVATION SYSTEM', 40, 54, { characterSpacing: 0.5 });
+         .text('DEMO BOOKING · NOT A VALID INDIAN RAILWAYS TICKET', 40, 54, { characterSpacing: 0.3 });
 
       // Reset text color to dark gray for body
       doc.fillColor('#333333');
@@ -51,7 +51,7 @@ const generateTicketPDF = async (booking) => {
          .fontSize(11)
          .text(`PNR Number: `, 55, 107, { continued: true })
          .font('Helvetica-Bold')
-         .fillColor('#C51E3A')
+         .fillColor('#0f766e')
          .text(booking.pnr, { continued: true })
          .font('Helvetica')
          .fillColor('#333333')
@@ -62,7 +62,7 @@ const generateTicketPDF = async (booking) => {
       // Journey Details Card
       doc.font('Helvetica-Bold')
          .fontSize(13)
-         .fillColor('#C51E3A')
+         .fillColor('#0f766e')
          .text('JOURNEY DETAILS', 40, 150);
       
       doc.strokeColor('#E5E7EB')
@@ -82,7 +82,7 @@ const generateTicketPDF = async (booking) => {
          .font('Helvetica')
          .text('Class of Travel:', 40, 220)
          .font('Helvetica-Bold')
-         .text(`${booking.seatClass} (AC / Sleeper)`, 40, 235)
+         .text(`${booking.seatClass}`, 40, 235)
          .font('Helvetica')
          .text('Date of Journey:', 40, 260)
          .font('Helvetica-Bold')
@@ -119,13 +119,13 @@ const generateTicketPDF = async (booking) => {
 
       // Table Header
       let y = 342;
-      doc.fillColor('#C51E3A')
+      doc.fillColor('#0f766e')
          .rect(40, y, 515, 20)
          .fill();
 
       doc.fillColor('#FFFFFF')
          .font('Helvetica-Bold')
-         .fontSize(9)
+         .fontSize(10)
          .text('S.No.', 50, y + 6)
          .text('Passenger Name', 90, y + 6)
          .text('Age', 260, y + 6)
@@ -146,7 +146,7 @@ const generateTicketPDF = async (booking) => {
 
         doc.fillColor('#333333')
            .font('Helvetica')
-           .fontSize(9)
+           .fontSize(10)
            .text(`${idx + 1}`, 50, y + 8)
            .font('Helvetica-Bold')
            .text(p.name, 90, y + 8)
@@ -181,9 +181,9 @@ const generateTicketPDF = async (booking) => {
          .font('Helvetica-Bold')
          .text(booking.paymentStatus, 240, y + 32)
          .font('Helvetica')
-         .text('Total Fare Paid (incl. taxes):', 400, y + 15)
+         .text('Simulated total amount:', 400, y + 15)
          .font('Helvetica-Bold')
-         .fillColor('#C51E3A')
+         .fillColor('#0f766e')
          .fontSize(13)
          .text(`Rs. ${booking.totalFare.toFixed(2)}`, 400, y + 30);
 
@@ -192,18 +192,16 @@ const generateTicketPDF = async (booking) => {
       doc.fillColor('#666666')
          .font('Helvetica-Bold')
          .fontSize(10)
-         .text('IMPORTANT TERMS & CONDITIONS', 40, y)
+         .text('SIMULATED RESERVATION NOTICE', 40, y)
          .font('Helvetica')
          .fontSize(7.5)
-         .text('1. Please carry a valid original Identity Proof (Aadhaar, Passport, Driving License, PAN card) along with this e-ticket during the journey.', 40, y + 18, { width: 515 })
-         .text('2. Only confirmed ticket passengers are authorized to board the reserved coaches.', 40, y + 30, { width: 515 })
-         .text('3. Cancellation can be processed online prior to train chart preparation. Refund will be automatically credited to the original payment source.', 40, y + 42, { width: 515 })
-         .text('4. In case of train cancellation by railways, full refund will be processed automatically.', 40, y + 54, { width: 515 });
+         .text('This document represents a simulated project reservation only. It is not issued by Indian Railways or IRCTC and cannot be used for travel.', 40, y + 18, { width: 515 })
+         .text('Train and seat information is sample data. Payment, PNR, availability and refunds are simulated.', 40, y + 32, { width: 515 });
 
       // Footer
       doc.fontSize(8)
          .fillColor('#999999')
-         .text('Generated via Rail Yatra Booking System. Thank you for traveling with Indian Railways.', 40, 760, { align: 'center' });
+         .text('The One Rail · Sample reservation only · Not valid for travel', 40, 760, { align: 'center' });
 
       doc.end();
     } catch (error) {

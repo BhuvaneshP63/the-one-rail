@@ -42,7 +42,7 @@ export default function ForgotPasswordPage() {
   const handleResetPassword = async (e) => {
     e.preventDefault();
     if (!otp || !newPassword) return setError('Please enter OTP and new password');
-    if (newPassword.length < 6) return setError('Password must be at least 6 characters');
+    if (newPassword.length < 8) return setError('Password must be at least 8 characters');
     
     setError('');
     setMessage('');
@@ -73,7 +73,7 @@ export default function ForgotPasswordPage() {
           </div>
 
           {error && (
-            <div className="mb-6 p-3.5 bg-red-50 border border-red-100 text-sm text-[#C51E3A] rounded-md font-medium">
+            <div role="alert" className="mb-6 p-3.5 bg-red-50 border border-red-100 text-sm text-red-700 rounded-xl font-medium">
               {error}
             </div>
           )}
@@ -146,7 +146,7 @@ export default function ForgotPasswordPage() {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     className="form-input pl-10 pr-10"
-                    placeholder="Min. 6 characters"
+                    placeholder="Min. 8 characters"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
@@ -179,7 +179,7 @@ export default function ForgotPasswordPage() {
           )}
 
           <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-            <Link to="/login" className="text-sm font-semibold text-[#C51E3A] hover:underline">
+            <Link to="/login" className="text-sm font-semibold text-[#0f766e] hover:underline">
               Back to Login
             </Link>
           </div>

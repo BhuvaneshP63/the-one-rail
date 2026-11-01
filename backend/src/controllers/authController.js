@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const Notification = require('../models/Notification');
 
 // Generate JWT token helper
 const generateToken = (id) => {
@@ -15,15 +16,17 @@ const generateToken = (id) => {
 exports.register = async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
+    if (!name?.trim() || name.trim().length > 100 || !/^\S+@\S+\.\S+$/.test(email || '') || (password || '').length < 8) return res.status(400).json({ success: false, message: 'Enter a valid name and email, and a password of at least 8 characters.' });
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email: normalizedEmail });
     if (userExists) {
       return res.status(400).json({ success: false, message: 'User already exists with this email' });
     }
 
     const user = await User.create({
       name,
-      email,
+      email: normalizedEmail,
       password,
       phone
     });
@@ -52,7 +55,7 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: String(email || '').trim().toLowerCase() });
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
@@ -85,7 +88,7 @@ exports.login = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: String(email || '').trim().toLowerCase() });
     
     if (!user) {
       return res.status(404).json({ success: false, message: 'No account found with this email' });
@@ -113,7 +116,7 @@ exports.forgotPassword = async (req, res) => {
         });
 
         await transporter.sendMail({
-          from: `"Rail Yatra Support" <${process.env.SMTP_USER}>`,
+          from: `"The One Rail Support" <${process.env.SMTP_USER}>`,
           to: user.email,
           subject: 'Password Reset OTP - Online Train Booking',
           text: `Your OTP for resetting password is: ${otp}. It is valid for 10 minutes.`,
@@ -142,9 +145,10 @@ exports.forgotPassword = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
+    if (!/^\S+@\S+\.\S+$/.test(email || '') || !/^\d{6}$/.test(otp || '') || (newPassword || '').length < 8) return res.status(400).json({ success: false, message: 'Enter a valid email, six-digit code, and password of at least 8 characters.' });
 
     const user = await User.findOne({
-      email,
+      email: String(email || '').trim().toLowerCase(),
       resetPasswordOtp: otp,
       resetPasswordOtpExpires: { $gt: Date.now() }
     });
@@ -183,6 +187,9 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const { name, phone, savedTravellers, profilePicture } = req.body;
+    if (name !== undefined && (!name.trim() || name.trim().length > 100)) return res.status(400).json({ success: false, message: 'Name must be between 1 and 100 characters.' });
+    if (phone !== undefined && phone !== '' && !/^[+\d\s()-]{7,20}$/.test(phone)) return res.status(400).json({ success: false, message: 'Enter a valid phone number.' });
+    if (savedTravellers !== undefined && (!Array.isArray(savedTravellers) || savedTravellers.length > 20 || savedTravellers.some(p => !p.name?.trim() || !Number.isInteger(Number(p.age)) || Number(p.age) < 1 || Number(p.age) > 120 || !['Male', 'Female', 'Other'].includes(p.gender)))) return res.status(400).json({ success: false, message: 'Saved passenger details are invalid.' });
     const user = await User.findById(req.user._id);
 
     if (!user) {
@@ -190,8 +197,8 @@ exports.updateProfile = async (req, res) => {
     }
 
     if (name) user.name = name;
-    if (phone) user.phone = phone;
-    if (savedTravellers) user.savedTravellers = savedTravellers;
+    if (phone !== undefined) user.phone = phone;
+    if (savedTravellers !== undefined) user.savedTravellers = savedTravellers;
     if (profilePicture !== undefined) user.profilePicture = profilePicture;
 
     await user.save();
@@ -220,6 +227,7 @@ exports.updateProfile = async (req, res) => {
 exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || (newPassword || '').length < 8) return res.status(400).json({ success: false, message: 'Enter the current password and a new password of at least 8 characters.' });
     const user = await User.findById(req.user._id);
 
     const isMatch = await user.comparePassword(currentPassword);
@@ -233,6 +241,63 @@ exports.changePassword = async (req, res) => {
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getNotifications = async (req, res) => {
+  try {
+    const notifications = await Notification.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(50);
+    res.json({ success: true, notifications });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.markNotificationRead = async (req, res) => {
+  try {
+    const notification = await Notification.findOneAndUpdate({ _id: req.params.id, user: req.user._id }, { $set: { read: true } }, { new: true });
+    if (!notification) return res.status(404).json({ success: false, message: 'Notification not found.' });
+    res.json({ success: true, notification });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getFavorites = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('favoriteTrains favoriteRoutes');
+    return res.json({ success: true, favoriteTrains: user?.favoriteTrains || [], favoriteRoutes: user?.favoriteRoutes || [] });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Could not load favorites.' });
+  }
+};
+
+exports.updateFavorites = async (req, res) => {
+  try {
+    const { kind, favorite } = req.body;
+    if (typeof favorite !== 'boolean') return res.status(400).json({ success: false, message: 'Favorite state must be true or false.' });
+    const user = await User.findById(req.user._id).select('favoriteTrains favoriteRoutes');
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
+    if (kind === 'train') {
+      const { id } = req.body;
+      if (typeof id !== 'string' || !/^[\w-]{2,80}$/.test(id)) return res.status(400).json({ success: false, message: 'Train reference is invalid.' });
+      user.favoriteTrains = user.favoriteTrains || [];
+      user.favoriteTrains = favorite ? [...new Set([...user.favoriteTrains, id])] : user.favoriteTrains.filter(value => value !== id);
+    } else if (kind === 'route') {
+      const { from, fromName, to, toName } = req.body;
+      if (![from, to].every(value => typeof value === 'string' && /^[A-Za-z0-9]{2,8}$/.test(value)) || ![fromName, toName].every(value => typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 120) || from.toUpperCase() === to.toUpperCase()) {
+        return res.status(400).json({ success: false, message: 'Route favorite is invalid.' });
+      }
+      const key = route => route.from.toUpperCase() === from.toUpperCase() && route.to.toUpperCase() === to.toUpperCase();
+      user.favoriteRoutes = (user.favoriteRoutes || []).filter(route => !key(route));
+      if (favorite) user.favoriteRoutes.push({ from, fromName: fromName.trim(), to, toName: toName.trim() });
+    } else {
+      return res.status(400).json({ success: false, message: 'Favorite type is invalid.' });
+    }
+    await user.save();
+    return res.json({ success: true, favoriteTrains: user.favoriteTrains || [], favoriteRoutes: user.favoriteRoutes || [] });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Could not save favorite.' });
   }
 };
 
