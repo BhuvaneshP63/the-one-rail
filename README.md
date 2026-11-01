@@ -1,305 +1,334 @@
-# The One Rail ⭐
+# 🚆 The One Rail
 
-> **Experience luxury and speed with India's next-generation train booking system.**
+### A Smart Train Reservation Demonstration System
 
-## Table of Contents
-- [About the Project](#about-the-project)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Architecture Diagram](#architecture-diagram)
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [Running the Project](#running-the-project)
-- [Environment Variables](#environment-variables)
-- [API Documentation](#api-documentation)
-- [Database Schema](#database-schema)
-- [Screenshots](#screenshots)
-- [Deployment](#deployment)
-- [Learning Outcomes](#learning-outcomes)
-- [Contributing](#contributing)
-- [License](#license)
-- [Author](#author)
+The One Rail is a full-stack MERN application that demonstrates a modern train reservation experience. Users can search trains, explore class-specific coach layouts, select their preferred seats and berths, book tickets, and manage reservations through an intuitive interface.
+
+> **Project Notice:** This is a demonstration application. Train availability, fares, seat inventory, payments, PNRs and tickets are simulated. Generated tickets are not valid for railway travel and the application is not connected to official IRCTC booking systems.
 
 ---
 
-## About the Project
-**Why we built it:** 
-The One Rail is a modern train reservation demonstration with sample bookings and optional external timetable data.
+## 📌 About the Project
 
-**What problem it solves:**
-It solves the complexity of segment-based seat allocation, live train tracking, and secure payment processing. By bringing all these elements under one premium UI, users don't have to guess seat availability or struggle with complex booking flows.
+The One Rail aims to make the train reservation process more interactive by giving passengers control over their coach and exact seat selection.
 
-**Who can use it:**
-- **Passengers:** Looking to quickly search, book, and manage their train travel across India.
-- **Administrators:** Needing a unified dashboard to manage trains, routes, user bookings, and system analytics.
+Unlike basic booking demonstrations that automatically allocate seats, The One Rail allows passengers to visually explore coach layouts and select available seats for each traveller.
 
----
+The application also provides administrative tools to manage train information, stations, bookings, users and reservation statistics.
 
-## Features
-- ✔ **User Authentication**
-- ✔ **JWT Login & Secure Hashing**
-- ✔ **Role Based Access (Admin/User)**
-- ✔ **User-Selected Coach and Seat Reservations with Temporary Holds**
-- ✔ **Live GPS Train Tracking Simulation**
-- ✔ **Dynamic PDF Ticket Generation**
-- ✔ **Interactive Dashboard & Booking History**
-- ✔ **Simulated Checkout, PNR, Availability, and Fare Estimates**
-- ✔ **Search & Filtering (by Station, Date, Class)**
-- ✔ **Cancel & Refund Management**
-- ✔ **Responsive, Mobile-first Premium Design**
+## ✨ Key Features
 
----
+### 👤 Passenger Features
+- User registration and secure login using JWT authentication.
+- Train search by source, destination and journey date.
+- Station autocomplete and route information.
+- Train schedules, running days and class availability.
+- Train filtering and sorting.
+- Visual, class-specific coach layouts.
+- Exact coach, seat and berth selection.
+- Multiple passenger booking.
+- Berth preference guidance.
+- Temporary seat holds to prevent double booking.
+- Simulated payment and booking confirmation.
+- Simulated PNR generation and enquiry.
+- Downloadable PDF reservation tickets.
+- Booking history and cancellation.
+- User profile and saved passengers.
+- Favourite trains and routes.
+- Notifications and recent searches.
 
-## Tech Stack
+### 🚉 Coach and Seat Selection
 
-**Frontend**
-- React.js
-- Vite
-- Tailwind CSS
-- Lucide React (Icons)
-- React Router DOM
-- Axios
+The application supports configurable layouts for the following classes:
 
-**Backend**
-- Node.js
-- Express.js
-- PDFKit (Ticket Generation)
+| Class | Description |
+|---|---|
+| 1A | AC First Class – Cabins and Coupes |
+| 2A | AC Two Tier |
+| 3A | AC Three Tier |
+| 3E | AC Three Tier Economy |
+| SL | Sleeper Class |
+| CC | AC Chair Car |
+| 2S | Second Sitting |
 
-**Database**
-- MongoDB
-- Mongoose
+Sleeper coaches display berth types such as Lower, Middle, Upper, Side Lower and Side Upper where applicable. Chair-car layouts display numbered seats instead of sleeping berths.
 
-**Authentication**
-- JSON Web Tokens (JWT)
-- bcrypt.js
+### 🛏️ Lower Berth Guidance
 
-**DevOps & Deployment**
-- Vercel (Frontend)
-- Render (Backend)
-- MongoDB Atlas (Cloud DB)
+The application provides a configurable lower-berth recommendation order:
 
-**Tools**
-- Git & GitHub
-- VS Code
-- Postman
+1. Eligible aged passengers
+2. Women passengers
+3. Other passengers
 
----
+This is application-level guidance, not an official railway quota. Passenger-selected available seats are never silently reassigned.
 
-## Architecture Diagram
+### 🔐 Booking Safety
+- Temporary seat holds with expiry.
+- Atomic seat inventory updates.
+- Prevention of simultaneous booking of the same seat.
+- Multi-seat hold rollback on failure.
+- Booking confirmation linked to selected passengers and seats.
+- Seat release after eligible cancellation.
 
-```mermaid
-graph TD;
-    Browser-->|HTTP Requests| ReactFrontend[React.js Frontend];
-    ReactFrontend-->|Axios API Calls| ExpressAPI[Express.js API];
-    ExpressAPI-->|JWT Verification| AuthMiddleware[Auth Middleware];
-    AuthMiddleware-->|Mongoose queries| MongoDB[(MongoDB)];
-    ExpressAPI-->|PDF Generation| PDFKit[PDFKit];
-    ExpressAPI-->|Simulated payment confirmation| LocalBooking[Local Reservation Data];
-```
+### 🛠️ Administrator Features
+- Train and station management.
+- Coach and route configuration.
+- Booking and passenger management.
+- User management.
+- Occupancy and class statistics.
+- Booking analytics.
+- Audit history.
+- CSV reports.
 
 ---
 
-## Project Structure
+## 🏗️ Technology Stack
+
+| Technology | Purpose |
+|---|---|
+| React 18 | Frontend development |
+| Vite | Frontend build tool |
+| Tailwind CSS | UI styling |
+| React Router | Navigation |
+| Axios | API communication |
+| Node.js | Backend runtime |
+| Express.js | REST API |
+| MongoDB | Database |
+| Mongoose | Database modelling |
+| JWT | Authentication |
+| PDFKit | PDF ticket generation |
+| Lucide React | Icons |
+
+---
+
+## 📂 Project Structure
 
 ```text
 rail-yatra/
+│
 ├── backend/
-│   ├── scripts/          # DB Seeding Scripts
+│   ├── scripts/
 │   ├── src/
-│   │   ├── config/       # DB Connection & Configs
-│   │   ├── controllers/  # API Logic
-│   │   ├── middleware/   # JWT Auth & Error Handling
-│   │   ├── models/       # Mongoose Schemas
-│   │   ├── routes/       # Express Route Definitions
-│   │   ├── utils/        # Mailer, PDF Generators
-│   │   └── index.js      # Server Entry Point
-│   ├── package.json
-│   └── .env.example
+│   │   ├── controllers/
+│   │   ├── middleware/
+│   │   ├── models/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   └── utils/
+│   ├── test/
+│   ├── .env.example
+│   └── package.json
+│
 ├── frontend/
-│   ├── public/           # Static Assets
 │   ├── src/
-│   │   ├── components/   # Reusable UI Components
-│   │   ├── context/      # React Context (Auth, Booking)
-│   │   ├── pages/        # Route Pages (Dashboard, Search, etc.)
-│   │   ├── App.jsx       # Main Router
-│   │   └── index.css     # Tailwind & Custom CSS
-│   ├── package.json
-│   ├── tailwind.config.js
-│   └── vite.config.js
+│   │   ├── components/
+│   │   ├── context/
+│   │   ├── pages/
+│   │   └── utils/
+│   ├── test/
+│   └── package.json
+│
+├── docs/
+├── .gitignore
+├── package-lock.json
 └── README.md
 ```
 
 ---
 
-## Installation
+## ⚙️ Installation and Setup
+
+### Prerequisites
+
+Install the following:
+
+- Node.js 18 or later
+- MongoDB Community Server
+- Git
+- Visual Studio Code (recommended)
+
+### 1. Clone the Repository
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/rail-yatra.git
-cd rail-yatra
+git clone https://github.com/BhuvaneshP63/the-one-rail.git
+```
 
-# Install Backend Dependencies
+```bash
+cd the-one-rail
+```
+
+### 2. Backend Setup
+
+```bash
 cd backend
 npm install
-
-# Install Frontend Dependencies
-cd ../frontend
-npm install
 ```
 
----
-
-## Testing
-
-Run the isolated unit suites from each application folder with `npm test`. The booking smoke check exercises registration, login, sample search, concurrent seat holds, confirmation, PNR, PDF download, cancellation, and seat release. It requires a dedicated MongoDB database whose name ends in `_test`, plus an API instance connected to that same database:
-
-```env
-MONGODB_TEST_URI=mongodb://localhost:27017/the_one_rail_test
-TEST_API_BASE_URL=http://localhost:5000/api
-```
-
-Set the backend API instance’s `MONGODB_URI` to the same test-only URI before running `npm run test:smoke`. The script refuses a database name without the `_test` suffix and never uses the normal `MONGODB_URI` as its cleanup connection.
-
----
-
-## Running the Project
-
-**1. Start the Backend:**
-```bash
-cd backend
-npm run dev
-```
-*Backend runs on http://localhost:5000*
-
-**2. Start the Frontend:**
-```bash
-cd frontend
-npm run dev
-```
-*Frontend runs on http://localhost:5173*
-
-**Add sample train data safely:**
-```bash
-cd backend
-npm run seed:sample
-```
-This command inserts only missing sample stations, trains, and routes. It does not replace or delete existing records. `npm run seed` is the legacy full reset script and deletes existing collections; do not use it when you need to preserve data.
-
-With the default sample provider, train schedules, fares, seats, payments, and PNRs are simulated information, not verified live railway or IRCTC data. External timetable mode is described below; it does not make seats, fares, payments, or PNRs real. The generated PDF is a project reservation and is not valid for travel. Seat inventory is local application data, separate from the timetable provider.
-
----
-
-## Environment Variables
-
-Never upload your `.env` file to version control. Create a `.env` in the `backend` folder:
+Create a `.env` file inside the backend folder:
 
 ```env
 PORT=5000
 MONGODB_URI=mongodb://127.0.0.1:27017/train_booking
-JWT_SECRET=your_super_secret_jwt_key
-SEAT_HOLD_MINUTES=8
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_app_password
+JWT_SECRET=your_strong_secret_key
+JWT_EXPIRES_IN=7d
 FRONTEND_URL=http://localhost:5173
 ```
 
-Optional frontend setting in `frontend/.env`:
-```env
-VITE_SENIOR_CITIZEN_AGE=60
+Add optional provider or email configuration only when required. Refer to `.env.example` for the project's supported variables.
+
+Start the backend:
+
+```bash
+npm run dev
 ```
 
----
+Backend runs at:
 
-## API Documentation
+`http://localhost:5000`
 
-### Auth
-- `POST /api/auth/register` - Register a new user
-- `POST /api/auth/login` - Authenticate user & get token
-- `GET /api/auth/profile` - Get logged-in user profile
+### 3. Frontend Setup
 
-### Trains
-- `GET /api/trains/search?from=NDLS&to=SBC&date=2026-07-16` - Search available trains
-- `GET /api/trains/stations/autocomplete?query=Del` - Search stations
-- `GET /api/trains/:id/route` - Get train route stops
+Open another terminal:
 
-### Bookings
-- `POST /api/bookings/create` - Create a pending order
-- `GET /api/bookings/coaches?trainId=...&date=YYYY-MM-DD&seatClass=SL` - List local sample coaches
-- `GET /api/bookings/coaches/:coach/seats?...` - View a coach layout
-- `POST /api/bookings/hold` - Temporarily hold selected seats (authenticated)
-- `POST /api/bookings/verify` - Confirm a simulated payment and the exact held seats
-- `GET /api/bookings/history` - Get user's bookings
-- `GET /api/bookings/:id/download` - Download PDF Ticket
-- `POST /api/bookings/:id/cancel` - Cancel ticket and process refund
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
----
+Frontend runs at:
 
-## Database Schema
+`http://localhost:5173`
 
-**Collections:**
-- **Users**: `_id`, `name`, `email`, `password`, `phone`, `role`, `savedTravellers`
-- **Stations**: `_id`, `code`, `name`, `state`, `zone`
-- **Trains**: `_id`, `trainNumber`, `name`, `source`, `destination`, `classes`, `coachComposition`, `baseFare`, `runsOn`, `dataSource`
-- **Routes**: `_id`, `train`, `stops` (`station`, `arrivalTime`, `departureTime`, `distanceKm`, `dayNumber`)
-- **Bookings**: `_id`, `user`, `train`, `pnr`, `date`, `seatClass`, `passengers`, `totalFare`, `status`, `paymentId`
-- **SeatInventories**: unique train/date/class/coach/seat entries with AVAILABLE, HELD, and BOOKED states
-- **Reviews**: `_id`, `user`, `train`, `rating`, `comment`
+### 4. Add Sample Train Data
+
+From the backend directory:
+
+```bash
+npm run seed:sample
+```
+
+This script adds missing sample stations, trains and routes while preserving existing records.
+
+**Important:** Avoid running the legacy seed script against a database containing data you want to preserve.
 
 ---
 
-## Screenshots
+## 🔄 Application Workflow
 
-*(Upload and replace these links with actual image URLs once pushed to GitHub)*
-
-- **Landing Page**: `![Landing Page](./docs/landing.png)`
-- **Search Results**: `![Search Results](./docs/search.png)`
-- **Secure Checkout / Payment Gateway**: `![Checkout](./docs/checkout.png)`
-- **User Dashboard**: `![Dashboard](./docs/dashboard.png)`
-- **Live Train Tracker**: `![Tracker](./docs/tracker.png)`
-- **PDF Ticket Generation**: `![Ticket](./docs/ticket.png)`
+1. Register or log in.
+2. Enter source, destination and journey date.
+3. Search and compare available sample trains.
+4. Select a train and travel class.
+5. Explore the visual coach layout.
+6. Select an exact available seat or berth for each passenger.
+7. Enter passenger details and review the fare.
+8. Complete the simulated payment process.
+9. Receive booking confirmation and a simulated PNR.
+10. Download the PDF ticket or manage the booking.
 
 ---
 
-## Deployment
-- **Frontend**: Deployed on [Vercel](https://vercel.com)
-- **Backend**: Deployed on [Render](https://render.com)
-- **Database**: Hosted on [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+## 🧩 System Architecture
 
-*(Refer to `deployment_guide.md` for complete step-by-step instructions).*
+```text
+       REACT FRONTEND
+              |
+              | Axios API Requests
+              |
+       EXPRESS REST API
+              |
+       JWT Authentication
+              |
+       Controllers & Services
+              |
+          MONGOOSE
+              |
+          MONGODB
+```
 
-## Railway timetable data provider
+### Train Data Integration
 
-The app defaults to its clearly labelled sample timetable. To search externally supplied Indian train schedules, set these values in the **backend** environment:
+The application uses sample train data by default and supports an optional RailRadar timetable provider.
+
+External timetable information is kept separate from locally managed coach inventory, seat availability, fares and reservations.
+
+To enable the optional provider, configure the relevant environment variables:
 
 ```env
 TRAIN_DATA_PROVIDER=railradar
-RAILRADAR_API_KEY=your_server_side_provider_key
+RAILRADAR_API_KEY=your_api_key
 ```
 
-The external mode uses the RailRadar station directory and trains-between-stations timetable API; `GET /api/trains/directory` exposes its reserved-train directory and `GET /api/trains/external/:trainNumber/schedule` returns an individual schedule. Keep the key on the server and never put it in a `VITE_` variable. External results are read-only timetable information: class, fare, and live seat availability are not inferred, and demo booking stays disabled for those results. Local sample train data and reservation inventory continue to work when `TRAIN_DATA_PROVIDER` is unset. The provider's schedule data is third-party information and should be checked against official railway sources before travel.
+Provider access, API coverage and credentials must be verified separately.
 
 ---
 
-## Learning Outcomes
-- Implementing complex business logic for segment-based seat allocation.
-- Understanding and integrating simulated Payment Gateways.
-- Designing a premium, highly responsive user interface using Tailwind CSS.
-- Generating binary files (PDFs) dynamically on the backend and serving them to the client.
+## 🧪 Testing and Verification
+
+The following verification results were recorded on 1 November 2026:
+
+| Test | Result |
+|---|---|
+| Frontend unit tests | 4 passed |
+| Backend unit tests | 24 passed |
+| Frontend production build | Passed |
+| Booking lifecycle smoke test | Passed |
+
+### Verified Areas
+- Coach layouts and capacities.
+- Train composition and sample train data.
+- Fare calculation and validation.
+- Lower-berth recommendation guidance.
+- Atomic seat holds and concurrent booking protection.
+- Exact seat persistence.
+- Simulated PNR generation.
+- PDF ticket generation.
+- Booking cancellation and seat release.
+
+The booking lifecycle smoke test was performed against a dedicated test database.
 
 ---
 
-## Contributing
-Contributions are always welcome! Please fork this repository and submit a pull request for any enhancements.
+## ⚠️ Limitations
+
+- Train schedules use sample data by default; optional external timetable integration requires authorized provider access.
+- Seat availability and coach inventory are simulated.
+- Fare calculations are project estimates, not official railway fares.
+- Payment processing is simulated.
+- PNR numbers are generated by the application and are not official railway PNRs.
+- Generated PDF tickets are demonstration documents and cannot be used for travel.
+- The application is not connected to IRCTC's official reservation or payment systems.
 
 ---
 
-## License
-Distributed under the MIT License. See `LICENSE` for more information.
+## 🚀 Future Enhancements
+
+- Verified live railway timetable integration.
+- Real-time train running status integration.
+- Deployment to cloud infrastructure.
+- Enhanced responsive design and accessibility.
+- Expanded automated testing.
+- Production monitoring, backups and recovery.
+- Authorized payment integration, if available.
 
 ---
 
-## Author
-**Prajwal**
-- GitHub: [@Prajwal01-oss](https://github.com/Prajwal01-oss)
+## 👨‍💻 Project Information
+
+**Project Name:** The One Rail  
+**Project Type:** Full-Stack Web Application  
+**Domain:** Railway Reservation System  
+**Technology:** MERN Stack  
+**Repository:** [GitHub – The One Rail](https://github.com/BhuvaneshP63/the-one-rail)
+
+---
+
+## 📜 License
+
+This project is developed for educational and demonstration purposes. Add a license before permitting reuse or redistribution.
+
+---
+
+**The One Rail – Making Train Reservations More Interactive! 🚆**
