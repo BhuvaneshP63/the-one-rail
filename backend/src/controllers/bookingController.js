@@ -9,6 +9,8 @@ const SeatInventory = require('../models/SeatInventory');
 const Payment = require('../models/Payment');
 const Notification = require('../models/Notification');
 const { releaseExpiredHolds } = require('../utils/coachInventory');
+const { ensureInventory } = require('../utils/coachInventory');
+const { holdSeatBatch } = require('../utils/atomicSeatHold');
 const { calculateSampleFare } = require('../utils/sampleFare');
 const { generateTicketPDF } = require('../utils/pdfGenerator');
 const { sendTicketEmail } = require('../utils/mailer');
@@ -21,6 +23,119 @@ const generatePNR = () => {
 // Generate Booking ID (8 alphanumeric characters uppercase)
 const generateBookingID = () => {
   return 'BK' + crypto.randomBytes(3).toString('hex').toUpperCase();
+};
+
+const SUPPORTED_CLASSES = new Set(['1A', '2A', '3A', '3E', 'SL', 'CC', '2S']);
+const LAYOUTS = { '1A': 'berth-1a', '2A': 'berth-2a', '3A': 'berth-3a', '3E': 'berth-3e', SL: 'berth-sl', CC: 'chair-cc', '2S': 'chair-2s' };
+const EXTERNAL_PAYMENT_METHODS = { GPay: 'UPI', PhonePe: 'UPI', 'Net Banking': 'Netbanking', 'Credit / Debit Card': 'Card' };
+
+async function externalStation(code, name) {
+  const safeCode = String(code || '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{2,12}$/.test(safeCode)) throw new Error('A valid railway station code is required.');
+  return Station.findOneAndUpdate(
+    { code: safeCode },
+    { $setOnInsert: { code: safeCode, name: String(name || safeCode).trim().slice(0, 120), state: 'External', zone: 'EXT' } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+}
+
+// @desc    Confirm a locally simulated reservation for an external timetable train
+// @route   POST /api/bookings/external/confirm
+// @access  Private
+exports.confirmExternalDemoBooking = async (req, res) => {
+  const { trainNumber, trainName, date, from, to, coach, seatClass, capacity, seats, passengers, departureTime, arrivalTime, distanceKm, paymentMethod } = req.body;
+  let held;
+  let booking;
+  try {
+    if (!trainNumber || !trainName || !from?.code || !to?.code || !coach || !SUPPORTED_CLASSES.has(seatClass) || !/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !Array.isArray(seats) || !Array.isArray(passengers) || !passengers.length || passengers.length > 6 || seats.length !== passengers.length) {
+      return res.status(400).json({ success: false, message: 'Complete journey, passenger and seat details are required.' });
+    }
+    if (date < new Date().toISOString().slice(0, 10)) return res.status(400).json({ success: false, message: 'Choose a valid future journey date.' });
+    if (new Set(seats.map(Number)).size !== seats.length || seats.some(seat => !Number.isInteger(Number(seat)) || Number(seat) < 1 || Number(seat) > Number(capacity || 0))) return res.status(400).json({ success: false, message: 'Choose distinct valid seats for every passenger.' });
+    if (passengers.some(passenger => !passenger.name?.trim() || !Number.isInteger(Number(passenger.age)) || Number(passenger.age) < 1 || Number(passenger.age) > 120 || !['Male', 'Female', 'Other'].includes(passenger.gender))) return res.status(400).json({ success: false, message: 'Enter valid details for every passenger.' });
+    if (from.code === to.code) return res.status(400).json({ success: false, message: 'Source and destination must be different.' });
+    const normalizedPaymentMethod = EXTERNAL_PAYMENT_METHODS[paymentMethod];
+    if (!normalizedPaymentMethod) return res.status(400).json({ success: false, message: 'Choose a valid payment method.' });
+
+    const [source, destination] = await Promise.all([externalStation(from.code, from.name), externalStation(to.code, to.name)]);
+    const localTrainNumber = `RR-${String(trainNumber).replace(/[^A-Za-z0-9-]/g, '').slice(0, 20)}`;
+    const safeCapacity = Math.min(120, Math.max(1, Number(capacity)));
+    const train = await Train.findOneAndUpdate(
+      { trainNumber: localTrainNumber },
+      { $set: { name: String(trainName).trim().slice(0, 160), source: source._id, destination: destination._id, classes: [seatClass], dataSource: 'external', coachComposition: [{ coachNumber: String(coach).trim().slice(0, 20), classType: seatClass, capacity: safeCapacity, layout: LAYOUTS[seatClass] }], runsOn: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], baseFare: { [seatClass]: 1 }, active: true } },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+    await Route.findOneAndUpdate(
+      { train: train._id },
+      { $set: { train: train._id, stops: [
+        { station: source._id, stopIndex: 0, arrivalTime: 'Source', departureTime: departureTime || '00:00', distanceKm: 0, dayNumber: 1 },
+        { station: destination._id, stopIndex: 1, arrivalTime: arrivalTime || '23:59', departureTime: 'Destination', distanceKm: Math.max(1, Number(distanceKm) || 1), dayNumber: 1 }
+      ] } },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+
+    await ensureInventory(train, date, seatClass);
+    await releaseExpiredHolds({ train: train._id, date, seatClass });
+    const holdId = crypto.randomUUID();
+    held = await holdSeatBatch({ inventory: SeatInventory, scope: { train: train._id, date, seatClass, coach: String(coach).trim() }, seatNumbers: seats.map(Number), userId: req.user._id, holdId, expiresAt: new Date(Date.now() + 5 * 60 * 1000) });
+    if (!held.success) return res.status(409).json({ success: false, message: `Seat ${held.seatNumber} was just booked by another user. Choose a different seat.` });
+
+    const farePerPassenger = 420;
+    booking = await Booking.create({
+      pnr: generatePNR(), bookingId: generateBookingID(), user: req.user._id, train: train._id, date, seatClass,
+      source: source._id, destination: destination._id, boardingStation: source._id, holdId,
+      passengers: passengers.map((passenger, index) => ({ ...passenger, coach: String(coach).trim(), seatNumber: Number(seats[index]), seatType: held.held.find(item => item.seatNumber === Number(seats[index]))?.seatType || 'Seat', preferredBerth: 'No preference' })),
+      totalFare: farePerPassenger * passengers.length,
+      fareBreakdown: { class: seatClass, farePerPassenger, passengerCount: passengers.length, total: farePerPassenger * passengers.length, source: 'External timetable / local simulated reservation' },
+      status: 'Pending', paymentStatus: 'Pending', paymentId: `MOCK_${String(paymentMethod).replace(/\W/g, '').toUpperCase()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`
+    });
+    const payment = await Payment.create({ booking: booking._id, amount: booking.totalFare, orderId: `order_mock_external_${crypto.randomBytes(5).toString('hex')}`, paymentId: booking.paymentId, signature: 'MOCK_SIGNATURE', status: 'Captured', method: normalizedPaymentMethod });
+    const confirmed = await SeatInventory.updateMany(
+      { _id: { $in: held.held.map(item => item._id) }, status: 'HELD', holdId, holdBy: req.user._id },
+      { $set: { status: 'BOOKED', booking: booking._id }, $unset: { holdBy: 1, holdId: 1, holdExpiresAt: 1 } }
+    );
+    if (confirmed.modifiedCount !== passengers.length) {
+      await SeatInventory.updateMany({ _id: { $in: held.held.map(item => item._id) }, holdId, status: 'HELD' }, { $set: { status: 'AVAILABLE' }, $unset: { holdBy: 1, holdId: 1, holdExpiresAt: 1 } });
+      await Booking.findByIdAndUpdate(booking._id, { $set: { status: 'Cancelled' } });
+      await Payment.findByIdAndUpdate(payment._id, { $set: { status: 'Failed' } });
+      return res.status(409).json({ success: false, message: 'Seats changed while confirming. Please choose again.' });
+    }
+    booking.status = 'Confirmed';
+    booking.paymentStatus = 'Paid';
+    await booking.save();
+    await Notification.create({ user: req.user._id, title: 'Demo reservation confirmed', message: `Your local simulated reservation for ${train.name} is confirmed. PNR: ${booking.pnr}. Seats: ${booking.passengers.map(passenger => `${passenger.coach}/${passenger.seatNumber}`).join(', ')}.`, type: 'Booking' }).catch(() => {});
+    res.status(201).json({ success: true, message: 'Simulated payment completed and seats are reserved until cancellation.', booking: { id: booking._id, pnr: booking.pnr, bookingId: booking.bookingId, totalFare: booking.totalFare } });
+  } catch (error) {
+    // Do not leave a failed simulated payment visible as a reservation or block seats.
+    if (booking?.paymentStatus !== 'Paid') await Booking.findByIdAndDelete(booking._id).catch(() => {});
+    if (held?.held?.length) await SeatInventory.updateMany(
+      { _id: { $in: held.held.map(item => item._id) }, status: 'HELD' },
+      { $set: { status: 'AVAILABLE' }, $unset: { holdBy: 1, holdId: 1, holdExpiresAt: 1 } }
+    ).catch(() => {});
+    res.status(500).json({ success: false, message: error.message || 'Could not confirm the reservation.' });
+  }
+};
+
+// @desc    Return locally reserved seats for an external timetable train/date
+// @route   GET /api/bookings/external/reserved
+// @access  Public (booking identity remains private)
+exports.getExternalReservedSeats = async (req, res) => {
+  try {
+    const { trainNumber, date } = req.query;
+    if (!trainNumber || !/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return res.status(400).json({ success: false, message: 'Train and journey date are required.' });
+    const localTrainNumber = `RR-${String(trainNumber).replace(/[^A-Za-z0-9-]/g, '').slice(0, 20)}`;
+    const train = await Train.findOne({ trainNumber: localTrainNumber }).select('_id');
+    if (!train) return res.json({ success: true, reserved: {} });
+    const rows = await SeatInventory.find({ train: train._id, date, status: 'BOOKED' }).select('coach seatNumber');
+    const reserved = rows.reduce((all, row) => {
+      if (!all[row.coach]) all[row.coach] = [];
+      all[row.coach].push(row.seatNumber);
+      return all;
+    }, {});
+    res.json({ success: true, reserved });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message || 'Could not load reserved seats.' });
+  }
 };
 
 // @desc    Create a pending booking and simulated payment order

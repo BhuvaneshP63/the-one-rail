@@ -9,6 +9,15 @@ const { ensureInventory, releaseExpiredHolds } = require('../utils/coachInventor
 const { getTrainDataProvider } = require('../services/trainDataProvider');
 const { calculateSampleFare } = require('../utils/sampleFare');
 
+const isValidDate = value => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+};
+
+const normalizeStationName = value => `${value || ''}`.toLocaleLowerCase().replace(/[^a-z0-9]/g, '');
+
 // Get day name from date string
 const getDayName = (dateStr) => {
   const [year, month, day] = dateStr.split('-').map(Number);
@@ -72,24 +81,35 @@ exports.searchTrains = async (req, res) => {
     if (!from || !to || !date) {
       return res.status(400).json({ success: false, message: 'From, To and Date are required query parameters' });
     }
+    if (!isValidDate(date)) {
+      return res.status(400).json({ success: false, message: 'Travel date must be a valid YYYY-MM-DD value.' });
+    }
 
     const provider = getTrainDataProvider();
     if (typeof provider.autocompleteStations === 'function') {
-      const stationCode = async value => {
-        if (/^[A-Za-z0-9]{2,8}$/.test(value)) return value.toUpperCase();
+      const resolveProviderStation = async (value, selectedName) => {
+        let lookup = `${value}`.trim();
         if (mongoose.Types.ObjectId.isValid(value)) {
           const station = await Station.findById(value).select('code');
-          if (station) return station.code;
+          if (station) lookup = station.code;
         }
-        return null;
+        if (!/^[A-Za-z0-9 -]{2,80}$/.test(lookup)) return null;
+        const stationName = `${selectedName || ''}`.replace(/\s*\([A-Za-z0-9]{1,10}\)\s*$/, '').trim();
+        const stations = await provider.autocompleteStations(stationName || lookup);
+        return stations.find(station => stationName && normalizeStationName(station.name) === normalizeStationName(stationName))
+          || stations.find(station => station.code === lookup.toUpperCase())
+          || stations.find(station => normalizeStationName(station.name) === normalizeStationName(lookup))
+          || stations[0]
+          || null;
       };
-      const [fromCode, toCode] = await Promise.all([stationCode(from), stationCode(to)]);
-      if (!fromCode || !toCode) return res.status(400).json({ success: false, message: 'Choose source and destination from the railway station suggestions.' });
-      const fromStation = await provider.autocompleteStations(fromCode);
-      const toStation = await provider.autocompleteStations(toCode);
-      const sourceStation = fromStation.find(station => station.code === fromCode);
-      const destinationStation = toStation.find(station => station.code === toCode);
+      const [sourceStation, destinationStation] = await Promise.all([
+        resolveProviderStation(from, req.query.fromName),
+        resolveProviderStation(to, req.query.toName)
+      ]);
       if (!sourceStation || !destinationStation) return res.status(404).json({ success: false, message: 'Railway station code was not found by the timetable provider.' });
+      if (sourceStation.code === destinationStation.code) return res.status(400).json({ success: false, message: 'Source and destination must be different railway stations.' });
+      const fromCode = sourceStation.code;
+      const toCode = destinationStation.code;
       const records = await provider.findTrainsBetweenStations({ from: fromCode, to: toCode, date });
       const formatDuration = minutes => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
       const trains = records.map(train => ({
@@ -112,7 +132,9 @@ exports.searchTrains = async (req, res) => {
         classDetails: {},
         bookable: false,
         distanceKm: train.distanceKm,
-        totalHalts: train.totalHalts
+        totalHalts: train.totalHalts,
+        runsOnRequestedDate: train.runsOnRequestedDate,
+        usedDateFallback: train.usedDateFallback
       }));
       return res.json({
         success: true,
@@ -297,6 +319,51 @@ exports.getProviderSchedule = async (req, res) => {
     return res.json({ success: true, dataSource: provider.sourceLabel, schedule: await provider.getSchedule(req.params.trainNumber) });
   } catch (error) {
     return res.status(error.status && error.status < 500 ? error.status : 502).json({ success: false, message: error.message });
+  }
+};
+
+exports.getProviderCoachComposition = async (req, res) => {
+  try {
+    const provider = getTrainDataProvider();
+    if (typeof provider.getCoachComposition !== 'function') return res.status(404).json({ success: false, message: 'External coach composition is not enabled.' });
+    if (!/^\d{4,6}$/.test(req.params.trainNumber)) return res.status(400).json({ success: false, message: 'Train number is invalid.' });
+    return res.json({ success: true, dataSource: provider.sourceLabel, coaches: await provider.getCoachComposition(req.params.trainNumber) });
+  } catch (error) {
+    return res.status(error.status && error.status < 500 ? error.status : 502).json({ success: false, message: error.message, code: error.code, traceId: error.traceId });
+  }
+};
+
+const getReservationQuery = req => {
+  const from = `${req.query.from || ''}`.trim().toUpperCase();
+  const to = `${req.query.to || ''}`.trim().toUpperCase();
+  const date = `${req.query.date || ''}`;
+  const seatClass = `${req.query.seatClass || ''}`.trim().toUpperCase();
+  const quota = `${req.query.quota || 'GN'}`.trim().toUpperCase();
+  if (!/^[A-Z0-9]{1,10}$/.test(from) || !/^[A-Z0-9]{1,10}$/.test(to) || from === to || !isValidDate(date) || !/^[A-Z0-9]{1,3}$/.test(seatClass) || !/^[A-Z]{2}$/.test(quota)) return null;
+  return { from, to, date, seatClass, quota };
+};
+
+exports.getProviderSeatAvailability = async (req, res) => {
+  try {
+    const provider = getTrainDataProvider();
+    const query = getReservationQuery(req);
+    if (typeof provider.getSeatAvailability !== 'function') return res.status(404).json({ success: false, message: 'External seat availability is not enabled.' });
+    if (!/^\d{4,6}$/.test(req.params.trainNumber) || !query) return res.status(400).json({ success: false, message: 'Train, route, date, class and quota are invalid.' });
+    return res.json({ success: true, dataSource: provider.sourceLabel, availability: await provider.getSeatAvailability(req.params.trainNumber, query) });
+  } catch (error) {
+    return res.status(error.status && error.status < 500 ? error.status : 502).json({ success: false, message: error.message, code: error.code, traceId: error.traceId });
+  }
+};
+
+exports.getProviderFare = async (req, res) => {
+  try {
+    const provider = getTrainDataProvider();
+    const query = getReservationQuery(req);
+    if (typeof provider.getFare !== 'function') return res.status(404).json({ success: false, message: 'External fare lookup is not enabled.' });
+    if (!/^\d{4,6}$/.test(req.params.trainNumber) || !query) return res.status(400).json({ success: false, message: 'Train, route, date, class and quota are invalid.' });
+    return res.json({ success: true, dataSource: provider.sourceLabel, fare: await provider.getFare(req.params.trainNumber, query) });
+  } catch (error) {
+    return res.status(error.status && error.status < 500 ? error.status : 502).json({ success: false, message: error.message, code: error.code, traceId: error.traceId });
   }
 };
 

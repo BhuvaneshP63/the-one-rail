@@ -63,6 +63,8 @@ export default function SearchResultsPage() {
           params: {
             from: searchParams.from,
             to: searchParams.to,
+            fromName: searchParams.fromName,
+            toName: searchParams.toName,
             date: searchParams.date
           }
         });
@@ -89,6 +91,14 @@ export default function SearchResultsPage() {
     setSelectedTrain(train);
     setSelectedClass(cls);
     navigate('/booking');
+  };
+
+  const confirmExternalBooking = async (payload) => {
+    if (!user) {
+      navigate('/login');
+      throw new Error('Please sign in to reserve seats.');
+    }
+    return axios.post('/api/bookings/external/confirm', payload);
   };
 
   const getDayName = (dateStr) => {
@@ -200,7 +210,7 @@ export default function SearchResultsPage() {
               {favoriteError && <p role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{favoriteError}</p>}
               {visibleTrains.length === 0 && <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600"><p>No trains match these filters.</p><button type="button" onClick={() => { setClassFilter('All'); setDepartureFilter('Any'); setArrivalFilter('Any'); setMinFare(''); setMaxFare(''); setTrainTypeFilter('All'); }} className="mt-3 font-semibold text-teal-800 underline">Clear filters</button></div>}
               {visibleTrains.map(train => (
-                <TrainCard key={train.trainId} train={train} onBook={handleBookNow} searchClass={searchParams.seatClass} favourite={favouriteIds.includes(train.trainId)} onFavourite={toggleFavourite} />
+                <TrainCard key={train.trainId} train={train} onBook={handleBookNow} journey={searchParams} onExternalConfirm={confirmExternalBooking} searchClass={searchParams.seatClass} favourite={favouriteIds.includes(train.trainId)} onFavourite={toggleFavourite} />
               ))}
             </section>
           </div>
@@ -230,11 +240,83 @@ function durationMinutes(value = '') {
   return Number(hours?.[1] || 0) * 60 + Number(minutes?.[1] || 0);
 }
 
-function TrainCard({ train, onBook, searchClass, favourite, onFavourite }) {
+function TrainCard({ train, onBook, journey, onExternalConfirm, searchClass, favourite, onFavourite }) {
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleStops, setScheduleStops] = useState(null);
+  const [coachComposition, setCoachComposition] = useState(null);
+  const [coachError, setCoachError] = useState('');
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleError, setScheduleError] = useState('');
+  const [externalClass, setExternalClass] = useState(searchClass || 'SL');
+  const [externalAvailability, setExternalAvailability] = useState(null);
+  const [externalFare, setExternalFare] = useState(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState('');
+  const [externalPassengers, setExternalPassengers] = useState([{ name: '', age: '', gender: 'Female' }]);
+  const [activeExternalPassenger, setActiveExternalPassenger] = useState(0);
+  const [activeExternalCoach, setActiveExternalCoach] = useState('');
+  const [selectedExternalSeats, setSelectedExternalSeats] = useState([]);
+  const [confirmedExternalSeat, setConfirmedExternalSeat] = useState(null);
+  const [showDemoPayment, setShowDemoPayment] = useState(false);
+  const [demoPaymentStep, setDemoPaymentStep] = useState('summary');
+  const [demoPaymentMethod, setDemoPaymentMethod] = useState('GPay');
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState('');
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
+  const [reservedExternalSeats, setReservedExternalSeats] = useState({});
+
+  const completeExternalPayment = async () => {
+    if (!confirmedExternalSeat || !displayedExternalCoach) return;
+    setBookingSubmitting(true);
+    setBookingError('');
+    try {
+      const { data } = await onExternalConfirm({
+        trainNumber: train.trainNumber, trainName: train.name, date: journey.date,
+        from: { code: train.boardingStation.code, name: train.boardingStation.name || journey.fromName },
+        to: { code: train.deboardingStation.code, name: train.deboardingStation.name || journey.toName },
+        coach: confirmedExternalSeat.coach, seatClass: displayedExternalCoach.classType,
+        capacity: displayedExternalCoach.totalBerths, seats: confirmedExternalSeat.seats,
+        passengers: externalPassengers, departureTime: train.boardingStation.departureTime,
+        arrivalTime: train.deboardingStation.arrivalTime, distanceKm: train.distanceKm,
+        paymentMethod: demoPaymentMethod
+      });
+      setConfirmedBooking(data.booking);
+      setReservedExternalSeats(current => ({ ...current, [confirmedExternalSeat.coach]: [...new Set([...(current[confirmedExternalSeat.coach] || []), ...confirmedExternalSeat.seats])] }));
+      setDemoPaymentStep('confirmed');
+    } catch (error) {
+      setBookingError(error.response?.data?.message || error.message || 'Could not reserve these seats. Please try again.');
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
+  const checkExternalAvailability = async () => {
+    setAvailabilityLoading(true);
+    setAvailabilityError('');
+    try {
+      const params = {
+        from: train.boardingStation.code,
+        to: train.deboardingStation.code,
+        date: journey.date,
+        seatClass: externalClass,
+        quota: 'GN'
+      };
+      const [availabilityResult, fareResult] = await Promise.allSettled([
+        axios.get(`/api/trains/external/${encodeURIComponent(train.trainNumber)}/seats`, { params }),
+        axios.get(`/api/trains/external/${encodeURIComponent(train.trainNumber)}/fare`, { params })
+      ]);
+      if (availabilityResult.status !== 'fulfilled') throw availabilityResult.reason;
+      const calendar = availabilityResult.value.data.availability?.calendar || [];
+      setExternalAvailability(calendar.find(item => item.rawDate === journey.date || item.date === journey.date) || calendar[0] || null);
+      setExternalFare(fareResult.status === 'fulfilled' ? fareResult.value.data.fare?.breakdown || null : null);
+    } catch (error) {
+      setExternalAvailability(null);
+      setExternalFare(null);
+      setAvailabilityError(error.response?.data?.message || 'Live seat availability is unavailable for this train and class.');
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  };
 
   const toggleSchedule = async () => {
     if (showSchedule) {
@@ -242,23 +324,42 @@ function TrainCard({ train, onBook, searchClass, favourite, onFavourite }) {
       return;
     }
     setShowSchedule(true);
-    if (scheduleStops) return;
+    const isExternal = train.dataSource === 'railradar';
+    if (scheduleStops && (!isExternal || coachComposition)) return;
     setScheduleLoading(true);
     setScheduleError('');
-    try {
-      const isExternal = train.dataSource === 'railradar';
-      const endpoint = isExternal
-        ? `/api/trains/external/${encodeURIComponent(train.trainNumber)}/schedule`
-        : `/api/trains/${encodeURIComponent(train.trainId)}/route`;
-      const { data } = await axios.get(endpoint);
-      const stops = isExternal ? data.schedule?.route : data.route?.stops;
-      if (!Array.isArray(stops)) throw new Error('This train schedule is not available from the selected data source.');
-      setScheduleStops(stops);
-    } catch (err) {
-      setScheduleError(err.response?.data?.message || err.message || 'Could not load this train schedule.');
-    } finally {
-      setScheduleLoading(false);
+    setCoachError('');
+    const scheduleEndpoint = isExternal
+      ? `/api/trains/external/${encodeURIComponent(train.trainNumber)}/schedule`
+      : `/api/trains/${encodeURIComponent(train.trainId)}/route`;
+    const requests = [axios.get(scheduleEndpoint)];
+    if (isExternal) {
+      requests.push(axios.get(`/api/trains/external/${encodeURIComponent(train.trainNumber)}/coaches`));
+      requests.push(axios.get('/api/bookings/external/reserved', { params: { trainNumber: train.trainNumber, date: journey.date } }));
     }
+    const [scheduleResult, coachResult, reservedResult] = await Promise.allSettled(requests);
+    if (scheduleResult.status === 'fulfilled') {
+      const data = scheduleResult.value.data;
+      const stops = isExternal ? data.schedule?.route : data.route?.stops;
+      if (Array.isArray(stops)) setScheduleStops(stops);
+      else setScheduleError('This train schedule is not available from the selected data source.');
+    } else {
+      const err = scheduleResult.reason;
+      setScheduleError(err.response?.data?.message || err.message || 'Could not load this train schedule.');
+    }
+    if (isExternal && coachResult) {
+      if (coachResult.status === 'fulfilled') {
+        const composition = coachResult.value.data.coaches;
+        setCoachComposition(composition);
+        setActiveExternalCoach(composition?.rake?.find(coach => coach.hasSeats)?.code || '');
+      }
+      else {
+        const err = coachResult.reason;
+        setCoachError(err.response?.data?.message || err.message || 'Coach composition is not available.');
+      }
+    }
+    if (isExternal && reservedResult?.status === 'fulfilled') setReservedExternalSeats(reservedResult.value.data.reserved || {});
+    setScheduleLoading(false);
   };
 
   // Sort classes to show preferred class first
@@ -267,6 +368,14 @@ function TrainCard({ train, onBook, searchClass, favourite, onFavourite }) {
     if (b === searchClass) return 1;
     return 0;
   });
+  const rakeCoaches = coachComposition?.rake || coachComposition?.legs?.[0]?.coaches || [];
+  const coachBlueprints = coachComposition?.blueprints || {};
+  const selectableExternalCoaches = rakeCoaches.filter(coach => coach.hasSeats && coach.totalBerths > 0);
+  const displayedExternalCoach = selectableExternalCoaches.find(coach => coach.code === activeExternalCoach) || selectableExternalCoaches[0];
+  const externalSeatTypes = displayedExternalCoach?.classType === '2A' ? ['LB', 'UB', 'SLB', 'SUB'] : displayedExternalCoach?.classType === '1A' ? ['LB', 'UB'] : ['LB', 'MB', 'UB', 'SLB', 'SUB'];
+  const externalSeats = displayedExternalCoach ? Array.from({ length: displayedExternalCoach.totalBerths }, (_, index) => ({ number: index + 1, type: ['CC', '2S'].includes(displayedExternalCoach.classType) ? 'Seat' : externalSeatTypes[index % externalSeatTypes.length] })) : [];
+  const externalPassengerReady = externalPassengers.every(passenger => passenger.name.trim().length >= 2 && Number.isInteger(Number(passenger.age)) && Number(passenger.age) >= 1 && Number(passenger.age) <= 120);
+  const demoFare = (externalFare?.totalFare || 420) * externalPassengers.length;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
@@ -345,7 +454,7 @@ function TrainCard({ train, onBook, searchClass, favourite, onFavourite }) {
             </div>
           );
         })}
-      </div> : <div className="p-4 bg-blue-50 text-sm text-blue-900">External timetable result · {train.trainType || 'Train'}{train.distanceKm ? ` · ${train.distanceKm} km` : ''}{train.totalHalts ? ` · ${train.totalHalts} stops` : ''}. Class, fare and seat availability are not included by this data source, so local demo booking is disabled.</div>}
+      </div> : <div className="space-y-3 bg-blue-50 p-4 text-sm text-blue-900"><p>External timetable result · {train.trainType || 'Train'}{train.distanceKm ? ` · ${train.distanceKm} km` : ''}{train.totalHalts ? ` · ${train.totalHalts} stops` : ''}.</p>{train.usedDateFallback && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">The provider returned no direct result for this date, so this scheduled train is shown as a fallback. {train.runsOnRequestedDate ? 'Check live seats before travelling.' : 'It may not run on the selected day.'}</p>}<p className="text-xs text-blue-950">Open <strong>View full schedule</strong> below to load the coach layout and choose a demo seat.</p></div>}
 
       <div className="border-t border-slate-100">
         <button type="button" onClick={toggleSchedule} aria-expanded={showSchedule} className="w-full px-5 py-3 flex items-center justify-between text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0f766e]">
@@ -374,6 +483,17 @@ function TrainCard({ train, onBook, searchClass, favourite, onFavourite }) {
                   })}</tbody>
                 </table>
               </div>}
+          {train.dataSource === 'railradar' && <section className="mt-5 border-t border-slate-200 pt-4" aria-label="External coach composition">
+            <div className="flex flex-wrap items-end justify-between gap-2"><div><h4 className="font-semibold text-slate-800">Coach composition</h4><p className="mt-1 text-xs text-slate-500">Provider timetable data · not seat availability</p></div>{coachComposition?.totalCoaches && <span className="text-xs font-medium text-slate-500">{coachComposition.totalCoaches} coaches</span>}</div>
+            {coachError ? <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{coachError}</p> : rakeCoaches.length > 0 ? <>
+              <div className="mt-3 flex flex-wrap gap-2" aria-label="Train coach sequence">{rakeCoaches.map((coach, index) => <span key={`${coach.position || index}-${coach.code}`} title={`${coach.className || coach.classType}${coach.hasSeats ? ` · ${coach.totalBerths} representative berths` : ''}`} className={`rounded-md border px-2.5 py-1.5 text-xs ${coach.hasSeats ? 'border-blue-200 bg-blue-50 text-blue-950' : 'border-slate-200 bg-slate-50 text-slate-600'}`}><strong>{coach.code}</strong>{coach.classType && <span className="ml-1.5">{coach.classType}</span>}{coach.totalBerths > 0 && <span className="ml-1.5 text-[10px]">· {coach.totalBerths}</span>}</span>)}</div>
+              {selectableExternalCoaches.length > 0 && <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50 p-4"><div className="flex flex-wrap items-center gap-2">{externalPassengers.map((passenger, index) => <button type="button" key={index} onClick={() => setActiveExternalPassenger(index)} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${activeExternalPassenger === index ? 'border-teal-700 bg-teal-700 text-white' : 'border-teal-200 bg-white text-teal-950'}`}>Passenger {index + 1}</button>)}{externalPassengers.length < 6 && <button type="button" onClick={() => { setExternalPassengers(current => [...current, { name: '', age: '', gender: 'Female' }]); setActiveExternalPassenger(externalPassengers.length); }} className="rounded-lg border border-dashed border-teal-500 px-3 py-2 text-xs font-semibold text-teal-800">+ Add passenger</button>}</div><div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-xs font-semibold text-teal-950">Name<input value={externalPassengers[activeExternalPassenger].name} onChange={event => setExternalPassengers(current => current.map((passenger, index) => index === activeExternalPassenger ? { ...passenger, name: event.target.value } : passenger))} className="form-input mt-1 block bg-white text-sm" /></label><label className="text-xs font-semibold text-teal-950">Age<input type="number" min="1" max="120" value={externalPassengers[activeExternalPassenger].age} onChange={event => setExternalPassengers(current => current.map((passenger, index) => index === activeExternalPassenger ? { ...passenger, age: event.target.value } : passenger))} className="form-input mt-1 block bg-white text-sm" /></label><label className="text-xs font-semibold text-teal-950">Gender<select value={externalPassengers[activeExternalPassenger].gender} onChange={event => setExternalPassengers(current => current.map((passenger, index) => index === activeExternalPassenger ? { ...passenger, gender: event.target.value } : passenger))} className="form-input mt-1 block bg-white text-sm"><option>Female</option><option>Male</option><option>Other</option></select></label></div><label className="mt-3 block text-xs font-semibold text-teal-950">Coach<select value={displayedExternalCoach?.code || ''} onChange={event => { setActiveExternalCoach(event.target.value); setSelectedExternalSeats([]); setConfirmedExternalSeat(null); }} className="form-input mt-1 block bg-white text-sm">{selectableExternalCoaches.map(coach => <option key={coach.code} value={coach.code}>{coach.code} · {coach.classType} · {coach.totalBerths} seats</option>)}</select></label>{!externalPassengerReady ? <p className="mt-3 rounded-lg bg-white p-3 text-xs text-teal-950">Enter valid details for every passenger before selecting seats.</p> : <><div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-8">{externalSeats.map(seat => { const lowerBerthRestricted = seat.type === 'LB' && externalPassengers[activeExternalPassenger].gender !== 'Female'; const selected = selectedExternalSeats[activeExternalPassenger] === seat.number; const usedByAnotherPassenger = selectedExternalSeats.some((chosen, index) => index !== activeExternalPassenger && chosen === seat.number); const alreadyBooked = (reservedExternalSeats[displayedExternalCoach.code] || []).includes(seat.number); return <button type="button" key={seat.number} disabled={lowerBerthRestricted || usedByAnotherPassenger || alreadyBooked} onClick={() => setSelectedExternalSeats(current => { const next = [...current]; next[activeExternalPassenger] = selected ? null : seat.number; return next; })} className={`min-h-11 rounded-lg border text-xs font-semibold ${lowerBerthRestricted || usedByAnotherPassenger || alreadyBooked ? 'cursor-not-allowed border-rose-200 bg-rose-100 text-rose-800' : selected ? 'border-teal-700 bg-teal-700 text-white' : 'border-slate-300 bg-white text-slate-800'}`}>{seat.number}<span className="block text-[9px] font-normal">{alreadyBooked ? 'Booked' : usedByAnotherPassenger ? 'Selected' : seat.type}</span></button>; })}</div>{selectedExternalSeats.filter(Number.isInteger).length === externalPassengers.length && <button type="button" onClick={() => setConfirmedExternalSeat({ coach: displayedExternalCoach.code, seats: selectedExternalSeats })} className="btn-primary mt-4 px-4">Confirm selected seats</button>}{confirmedExternalSeat && <p role="status" className="mt-3 rounded-lg bg-emerald-100 p-3 text-xs font-semibold text-emerald-950">Seats selected: {confirmedExternalSeat.coach}/{confirmedExternalSeat.seats.join(', ')}. They will be reserved after payment.</p>}</>}</div>}
+              {Object.keys(coachBlueprints).length > 0 && <div className="mt-4 grid gap-2 sm:grid-cols-2">{Object.entries(coachBlueprints).map(([classCode, blueprint]) => <div key={classCode} className="rounded-lg border border-slate-200 p-3"><div className="flex justify-between gap-2 text-xs"><strong className="text-slate-800">{classCode} · {blueprint.className || 'Coach layout'}</strong><span className="text-slate-500">{blueprint.totalBerths || '—'} berths</span></div>{blueprint.cabins?.slice(0, 2).map((cabin, cabinIndex) => <p key={cabin.cabinNumber || cabinIndex} className="mt-2 text-[11px] text-slate-600">Bay {cabin.cabinNumber || cabinIndex + 1}: {[...(cabin.main || []), ...(cabin.side || [])].map(berth => `${berth.number} ${berth.type}`).join(' · ')}</p>)}</div>)}</div>}
+            </> : <p className="mt-3 text-xs text-slate-500">Coach composition is not available for this train.</p>}
+            <p className="mt-3 text-[11px] text-slate-500">Coach sequence and berth layout are informational provider data. Available/booked seats remain simulated separately in this project.</p>
+          </section>}
+          {confirmedExternalSeat && <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50 p-4"><p className="text-sm font-semibold text-teal-950">Total demo fare: ₹{demoFare}</p><button type="button" onClick={() => { setShowDemoPayment(true); setDemoPaymentStep('summary'); }} className="btn-primary mt-3 px-4">Proceed to payment</button></div>}
+          {showDemoPayment && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><button type="button" disabled={bookingSubmitting} onClick={() => setShowDemoPayment(false)} className="float-right text-slate-500">Close</button>{demoPaymentStep === 'summary' ? <><h3 className="text-xl font-bold">Booking summary</h3><p className="mt-3 text-sm">{externalPassengers.length} passenger(s) · {confirmedExternalSeat?.coach}/{confirmedExternalSeat?.seats.join(', ')}</p><p className="mt-2 text-2xl font-bold">₹{demoFare}</p><p className="mt-2 text-xs text-slate-500">This is a simulated payment. The seats lock only after payment succeeds.</p><button type="button" onClick={() => setDemoPaymentStep('method')} className="btn-primary mt-5 w-full">Next</button></> : demoPaymentStep === 'method' ? <><h3 className="text-xl font-bold">Choose payment method</h3><div className="mt-4 grid grid-cols-2 gap-2">{['GPay', 'PhonePe', 'Net Banking', 'Credit / Debit Card'].map(method => <button type="button" key={method} onClick={() => setDemoPaymentMethod(method)} className={`rounded-lg border p-3 text-sm font-semibold ${demoPaymentMethod === method ? 'border-teal-700 bg-teal-50' : 'border-slate-200'}`}>{method}</button>)}</div>{bookingError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-xs text-rose-800">{bookingError}</p>}<button type="button" disabled={bookingSubmitting} onClick={completeExternalPayment} className="btn-primary mt-5 w-full">{bookingSubmitting ? 'Reserving seats…' : `Pay ₹${demoFare}`}</button></> : <><h3 className="text-xl font-bold text-emerald-700">Ticket confirmed</h3><p className="mt-3 text-sm">Demo payment via {demoPaymentMethod} successful. Your selected seats are now reserved.</p><p className="mt-2 text-sm font-semibold">PNR: {confirmedBooking?.pnr}</p><p className="mt-2 text-xs text-slate-500">No real payment was charged and no IRCTC ticket was issued. You can cancel this simulated reservation from My Bookings; cancellation releases the seats.</p><Link to="/dashboard#bookings" onClick={() => setShowDemoPayment(false)} className="btn-primary mt-5 block w-full text-center">View My Bookings</Link></>}</div></div>}
           <p className="mt-2 text-xs text-slate-500">{train.dataSource === 'railradar' ? 'External timetable information. Verify with official railway sources before travel.' : 'Sample timetable for demonstration; timings are not verified railway information.'}</p>
         </div>}
       </div>

@@ -68,10 +68,11 @@ export default function BookingPage() {
   const farePerPassenger = selectedTrain.classDetails[selectedClass].fare;
   const totalFare = farePerPassenger * passengers.length;
   const seniorCitizenAge = Number(import.meta.env.VITE_SENIOR_CITIZEN_AGE) || 60;
-  const { recommendLowerForActive, maleLowerBerthSelections, guidance: lowerBerthGuidance } = getLowerBerthPriority({
+  const { recommendLowerForActive, guidance: lowerBerthGuidance } = getLowerBerthPriority({
     passengers, selectedSeats, coachSeats, activePassengerIndex, seniorCitizenAge
   });
   const isChairClass = selectedClass === 'CC' || selectedClass === '2S';
+  const passengerDetailsComplete = passengers.every(passenger => passenger.name?.trim() && Number.isInteger(Number(passenger.age)) && Number(passenger.age) >= 1 && Number(passenger.age) <= 120 && ['Male', 'Female', 'Other'].includes(passenger.gender));
   const berthGroups = [];
   const groupedSeats = new Map();
   coachSeats.forEach(seat => {
@@ -279,18 +280,16 @@ export default function BookingPage() {
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-blue-900"><span className="h-2.5 w-2.5 rounded-sm bg-blue-500" /> Assigned in this booking</span>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-amber-950"><span className="h-2.5 w-2.5 rounded-sm bg-amber-400" /> Temporarily held</span>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-slate-700"><span className="h-2.5 w-2.5 rounded-sm bg-slate-400" /> Booked</span>
+                  {!isChairClass && passengers[activePassengerIndex]?.gender === 'Male' && <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-red-900"><span className="h-2.5 w-2.5 rounded-sm bg-red-400" /> Lower berth unavailable for male passenger</span>}
                   {!isChairClass && <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-900">★ Lower berth recommendation</span>}
                 </div>
                 <p className="text-xs text-slate-500 mb-4">{lowerBerthGuidance} This is application guidance, not an official railway quota.</p>
-                {maleLowerBerthSelections.map(({ passengerIndex, seatNumber }) => <div key={`${passengerIndex}-${seatNumber}`} role="status" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                  Priority reminder: Passenger {passengerIndex + 1}{passengers[passengerIndex]?.name ? ` (${passengers[passengerIndex].name})` : ''} selected lower berth {seatNumber}. This choice is allowed and will remain selected; you can continue booking. Lower berth recommendations for other passengers remain Priority 1: eligible aged passengers, Priority 2: women.
-                </div>)}
                 <div className="flex flex-wrap gap-2 mb-4" aria-label="Choose passenger to assign a seat">
                   {passengers.map((passenger, index) => <button type="button" key={index} onClick={() => setActivePassengerIndex(index)} className={`rounded-xl border px-3 py-2 text-xs ${activePassengerIndex === index ? 'border-[#0f766e] bg-teal-50 text-[#0f766e]' : 'border-slate-200 text-slate-600'}`}>
                     Passenger {index + 1}{passenger.name ? ` · ${passenger.name}` : ''}{Number.isInteger(selectedSeats[index]) ? ` · Seat ${selectedSeats[index]}` : ' · choose seat'}
                   </button>)}
                 </div>
-                {loadingSeats ? <p className="py-8 text-center text-slate-500">Loading coach layout…</p> : <div className="border-2 border-slate-200 rounded-2xl p-4 overflow-x-auto">
+                {!passengerDetailsComplete ? <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 text-sm text-blue-950"><p className="font-semibold">Add passenger details to choose seats</p><p className="mt-1">Enter each passenger’s name, age, and gender below. You can then select any available seat.</p><a className="mt-3 inline-flex font-semibold underline" href="#passenger-details">Go to passenger details</a></div> : loadingSeats ? <p className="py-8 text-center text-slate-500">Loading coach layout…</p> : <div className="border-2 border-slate-200 rounded-2xl p-4 overflow-x-auto">
                   <div className="text-[10px] uppercase text-slate-400 mb-3">Coach entrance · choose a seat for Passenger {activePassengerIndex + 1} in {activeCoach}</div>
                   <div className="flex flex-wrap gap-3 min-w-[280px]">
                     {berthGroups.map(group => <div key={group.name} className="rounded-xl border border-slate-200 bg-slate-50 p-2">
@@ -313,7 +312,7 @@ export default function BookingPage() {
             )}
 
             {/* Passenger Forms */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div id="passenger-details" className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800">Passenger Details</h3>
                 <span className="text-xs font-medium text-slate-500">{passengers.length}/6 Passengers</span>

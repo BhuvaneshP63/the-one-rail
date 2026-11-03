@@ -42,13 +42,13 @@ export default function Navbar() {
   };
 
   const navLinks = [
-    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, authRequired: true },
+    { name: 'Find trains', path: '/', icon: Train, authRequired: false },
     { name: 'Live Tracker', path: '/tracker', icon: MapPin, authRequired: false },
     { name: 'PNR Checker', path: '/pnr', icon: Search, authRequired: false }
   ];
 
   return (
-    <nav className="site-nav sticky top-0 z-40 border-b bg-white">
+    <nav className="site-nav sticky top-0 z-40 border-b bg-white" aria-label="Main navigation">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           {/* Logo Section */}
@@ -64,7 +64,7 @@ export default function Navbar() {
           </div>
 
           {/* Desktop Nav Links */}
-          <div className="hidden md:flex items-center space-x-6">
+          <div className="hidden md:flex items-center space-x-2">
             {navLinks.map((link) => {
               if (link.authRequired && !user) return null;
               const Icon = link.icon;
@@ -72,14 +72,14 @@ export default function Navbar() {
                 <Link
                   key={link.name}
                   to={link.path}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  className={`site-nav-link flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                     isActive(link.path)
                       ? 'bg-[#a33c32] text-white'
                       : 'text-[#4b544e] hover:bg-[#f5e8e3] hover:text-[#a33c32]'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
-                  <span>{link.name}</span>
+                    <span>{link.name}</span>
                 </Link>
               );
             })}
@@ -88,7 +88,7 @@ export default function Navbar() {
             {user && user.role === 'admin' && (
               <Link
                 to="/admin"
-                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  className={`site-nav-link flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                   isActive('/admin')
                     ? 'text-[#a33c32] bg-[#f5e8e3]'
                     : 'text-[#4b544e] hover:text-[#a33c32] hover:bg-[#f5e8e3]'
@@ -111,7 +111,7 @@ export default function Navbar() {
                     aria-label={`Notifications${notifications.some(item => !item.read) ? ', unread items' : ''}`}
                     aria-expanded={notifOpen}
                     aria-haspopup="true"
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d8ef73]"
+                    className="nav-icon-button p-2 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     <Bell className="h-5 w-5" />
                     {notifications.some(item => !item.read) && <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />}
@@ -133,7 +133,7 @@ export default function Navbar() {
                 {/* User Dropdown / Profile Link */}
                 <Link
                   to="/profile"
-                  className="flex items-center space-x-2 rounded-full border border-white/15 bg-white/10 p-1 pr-3 transition hover:border-white/30 hover:bg-white/15"
+                  className="nav-profile flex items-center space-x-2 rounded-full border p-1 pr-3 transition"
                 >
                   {user.profilePicture ? (
                     <img
@@ -146,13 +146,13 @@ export default function Navbar() {
                       {user.name.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <span className="text-sm font-medium text-white">{user.name.split(' ')[0]}</span>
+                  <span className="text-sm font-medium">{user.name.split(' ')[0]}</span>
                 </Link>
 
                 {/* Logout Button */}
                 <button
                   onClick={handleLogout}
-                  className="flex items-center space-x-1 p-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition"
+                  className="nav-icon-button flex items-center space-x-1 p-2 rounded-lg transition"
                   title="Logout"
                 >
                   <LogOut className="h-5 w-5" />
@@ -162,7 +162,7 @@ export default function Navbar() {
               <div className="flex items-center space-x-3">
                 <Link
                   to="/login"
-                  className="text-white/75 hover:text-white text-sm font-medium px-3 py-2"
+                  className="text-sm font-medium px-3 py-2"
                 >
                   Sign In
                 </Link>

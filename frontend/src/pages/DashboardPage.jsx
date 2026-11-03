@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import confetti from 'canvas-confetti';
 import { AuthContext } from '../context/AuthContext';
-import { Download, XCircle, Search, Clock, CheckCircle2, AlertCircle, Loader2, FileText } from 'lucide-react';
+import { Download, XCircle, Search, Clock, CheckCircle2, Loader2, FileText, ArrowRight, CalendarDays, TicketCheck, History } from 'lucide-react';
 
 export default function DashboardPage() {
   const { user, token } = useContext(AuthContext);
@@ -130,45 +130,34 @@ export default function DashboardPage() {
   const visibleNotifications = notifications.filter(item => [item.title, item.message, item.type].some(value => String(value || '').toLowerCase().includes(notificationQuery.toLowerCase()))).slice(0, 20);
 
   return (
-    <div className="min-h-screen bg-slate-50 py-8">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="dashboard-page min-h-screen bg-slate-50 py-8">
+      <div className="dashboard-inner max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        <header className="dashboard-heading">
+          <div><p className="dashboard-eyebrow">YOUR RAIL JOURNEYS</p><h1>Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {user?.name.split(' ')[0]}.</h1><p>Everything for your next trip, together in one place.</p></div>
+          <button type="button" onClick={() => navigate('/')} className="btn-primary dashboard-plan-button">Plan a journey <ArrowRight size={17} /></button>
+        </header>
+
+        <section className="dashboard-metrics" aria-label="Booking overview">
+          <div className="dashboard-metric"><span className="dashboard-metric-icon"><CalendarDays size={18} /></span><span><small>UPCOMING</small><strong>{upcomingBookingsCount(bookings)}</strong></span></div>
+          <div className="dashboard-metric"><span className="dashboard-metric-icon"><TicketCheck size={18} /></span><span><small>ALL BOOKINGS</small><strong>{bookings.length}</strong></span></div>
+          <div className="dashboard-metric"><span className="dashboard-metric-icon"><History size={18} /></span><span><small>PAST & CANCELLED</small><strong>{bookings.filter(b => b.status === 'Cancelled' || (b.status === 'Confirmed' && new Date(`${b.date}T00:00:00`) < today)).length}</strong></span></div>
+          <form onSubmit={handlePnrSearch} className="dashboard-pnr-card"><label htmlFor="dashboard-pnr">Quick PNR lookup</label><div><input id="dashboard-pnr" type="text" inputMode="numeric" aria-label="10-digit simulated PNR" placeholder="Enter 10-digit PNR" value={pnrSearch} onChange={e => setPnrSearch(e.target.value.replace(/\D/g, '').slice(0, 10))} /><button type="submit" aria-label="Check simulated PNR"><Search size={17} /></button></div></form>
+        </section>
+
+        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-xs font-bold uppercase tracking-wider text-teal-800">My account</p><h2 className="mt-1 text-xl font-bold text-slate-800">{user?.name}</h2><p className="mt-1 text-sm text-slate-600">{user?.email}{user?.phone ? ` · ${user.phone}` : ''}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => navigate('/profile')} className="btn-secondary min-h-11">Edit details</button><button type="button" onClick={() => navigate('/profile')} className="btn-primary min-h-11">Change password</button></div></div>
+        </section>
 
         {notifications.length > 0 && <section className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="font-bold text-amber-950">Notifications</h2><label className="sr-only" htmlFor="notification-search">Search notifications</label><input id="notification-search" className="form-input min-h-10 w-full sm:max-w-xs" value={notificationQuery} onChange={e => setNotificationQuery(e.target.value)} placeholder="Search notification history" /></div>
           {visibleNotifications.length ? visibleNotifications.map(n => <div key={n._id} className={`flex flex-wrap justify-between items-center gap-3 border-t border-amber-200/70 py-2 text-sm ${n.read ? 'text-slate-600' : 'text-amber-950'}`}><p><span className="font-semibold">{n.title}</span> · {n.message} <span className="ml-1 text-xs">{n.read ? 'Read' : 'Unread'}</span></p>{!n.read && <button onClick={() => markNotificationRead(n)} className="min-h-10 shrink-0 font-semibold text-amber-950 underline">Mark read</button>}</div>) : <p className="text-sm text-amber-950">No notifications match this search.</p>}
         </section>}
         
-        {/* Welcome & PNR Check */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="md:col-span-2 bg-[#103f3b] rounded-2xl shadow-lg p-7 text-white flex flex-col justify-center">
-            <h1 className="text-2xl font-bold font-heading mb-1">Welcome back, {user?.name.split(' ')[0]}!</h1>
-            <p className="text-slate-300 text-sm">Manage your upcoming journeys and booking history.</p>
-          </div>
-          
-          <div className="md:col-span-1 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wide">Quick PNR Check</h3>
-            <form onSubmit={handlePnrSearch} className="flex space-x-2">
-              <label htmlFor="dashboard-pnr" className="sr-only">10-digit simulated PNR</label>
-              <input 
-                id="dashboard-pnr"
-                type="text" 
-                inputMode="numeric"
-                aria-label="10-digit simulated PNR"
-                placeholder="10-digit PNR" 
-                className="form-input text-sm"
-                value={pnrSearch}
-                onChange={(e) => setPnrSearch(e.target.value.replace(/\D/g, '').slice(0, 10))}
-              />
-                <button type="submit" aria-label="Check simulated PNR" className="btn-primary min-h-11 min-w-11 px-3 flex-shrink-0">
-                <Search className="h-4 w-4" />
-              </button>
-            </form>
-          </div>
-        </div>
         {error && <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
         {actionMessage && <div role="status" className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{actionMessage}</div>}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div id="bookings" className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="text-xl font-bold text-slate-800">Booking history</h2>
           <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2 lg:grid-cols-4">
             <label className="sr-only" htmlFor="booking-history-search">Search bookings</label><input id="booking-history-search" className="form-input sm:w-56" value={bookingQuery} onChange={e => setBookingQuery(e.target.value)} placeholder="Search PNR or train" />
@@ -242,6 +231,11 @@ export default function DashboardPage() {
       </div>}
     </div>
   );
+}
+
+function upcomingBookingsCount(bookings) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return bookings.filter(b => b.status === 'Confirmed' && new Date(`${b.date}T00:00:00`) >= today).length;
 }
 
 function BookingCard({ booking, onDownload, onCancel, cancelling, badge }) {

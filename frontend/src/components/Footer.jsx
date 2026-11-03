@@ -1,59 +1,21 @@
 import React from 'react';
-import { Train, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Train, ArrowUpRight } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="site-footer border-t border-white/10">
-      <div className="max-w-7xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          
-          {/* Brand Info */}
-          <div className="col-span-1 md:col-span-2 space-y-4">
-            <div className="flex items-center space-x-2 text-white">
-              <Train className="h-6 w-6 text-[#d8ef73]" />
-              <span className="font-heading font-extrabold text-xl tracking-tight">
-                The One Rail
-              </span>
-            </div>
-            <p className="text-sm text-slate-400 max-w-sm">
-              The One Rail is a train reservation demonstration with sample timetables, user-selected seats, and simulated booking status.
-            </p>
-            <div className="flex items-center space-x-2 text-xs text-slate-400">
-              <ShieldCheck className="h-4 w-4 text-emerald-500" />
-              <span>Simulated payment only · no real charge</span>
-            </div>
+    <footer className="site-footer">
+      <div className="site-footer-inner">
+        <div className="site-footer-main">
+          <div className="site-footer-brand">
+            <Link to="/" className="site-footer-logo"><span className="site-footer-mark"><Train size={19} /></span><span>The One Rail</span></Link>
+            <p>A calmer way to plan a rail journey. Explore sample schedules and manage simulated reservations in one place.</p>
           </div>
-
-          {/* Quick Links */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-white uppercase tracking-wider">Navigation</h4>
-            <ul className="space-y-2 text-sm text-slate-400">
-              <li><a href="/dashboard" className="hover:text-white transition">My Dashboard</a></li>
-              <li><a href="/tracker" className="hover:text-white transition">Running Status</a></li>
-              <li><a href="/pnr" className="hover:text-white transition">PNR Status</a></li>
-              <li><a href="/profile" className="hover:text-white transition">User Account</a></li>
-            </ul>
-          </div>
-
-          {/* Help & Support */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-white uppercase tracking-wider">Help & Support</h4>
-            <ul className="space-y-2 text-sm text-slate-400">
-              <li><a href="#about" className="hover:text-white transition">About Us</a></li>
-              <li><a href="#faq" className="hover:text-white transition">FAQs</a></li>
-              <li><a href="#terms" className="hover:text-white transition">Terms of Service</a></li>
-              <li><a href="#contact" className="hover:text-white transition">Contact Support</a></li>
-            </ul>
-          </div>
-
+          <div className="site-footer-column"><h2>Explore</h2><Link to="/">Find trains <ArrowUpRight size={14} /></Link><Link to="/tracker">Running status <ArrowUpRight size={14} /></Link><Link to="/pnr">PNR enquiry <ArrowUpRight size={14} /></Link></div>
+          <div className="site-footer-column"><h2>Your account</h2><Link to="/dashboard">My bookings <ArrowUpRight size={14} /></Link><Link to="/profile">Profile & passengers <ArrowUpRight size={14} /></Link><Link to="/login">Sign in <ArrowUpRight size={14} /></Link></div>
         </div>
-
-        {/* Bottom Bar */}
-        <div className="mt-8 pt-8 border-t border-slate-800 flex flex-col md:flex-row justify-between items-center text-xs text-slate-500 space-y-4 md:space-y-0">
-          <p>© 2026 The One Rail booking demo.</p>
-        </div>
+        <div className="site-footer-bottom"><span>© 2026 The One Rail</span><span className="site-footer-demo">Demonstration service · Timetables, availability, PNR and payments are simulated.</span></div>
       </div>
     </footer>
   );
 }
-

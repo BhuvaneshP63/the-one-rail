@@ -53,6 +53,11 @@ export default function LandingPage() {
   const [fromActiveIndex, setFromActiveIndex] = useState(-1);
   const [toActiveIndex, setToActiveIndex] = useState(-1);
 
+  const parseStationDisplay = value => {
+    const match = `${value || ''}`.trim().match(/^(.+?)\s*\(([A-Za-z0-9]{1,10})\)$/);
+    return match ? { name: match[1].trim(), code: match[2].toUpperCase() } : null;
+  };
+
   const chooseStation = (field, station) => {
     setSearchError('');
     const value = `${station.name} (${station.code})`;
@@ -249,9 +254,13 @@ export default function LandingPage() {
                   placeholder="E.g. NDLS or Delhi"
                   value={fromQuery}
                   onChange={(e) => {
-                    setFromQuery(e.target.value);
+                    const value = e.target.value;
+                    const station = parseStationDisplay(value);
+                    setFromQuery(value);
+                    setToQuery('');
                     setFromActiveIndex(-1);
-                    setSearchParams(prev => ({ ...prev, from: '', fromName: '' }));
+                    setFromStationError('');
+                    setSearchParams(prev => ({ ...prev, from: station?.code || '', fromName: station ? value : '', to: '', toName: '' }));
                   }}
                   role="combobox"
                   aria-autocomplete="list"
@@ -309,9 +318,12 @@ export default function LandingPage() {
                   placeholder="E.g. SBC or Bengaluru"
                   value={toQuery}
                   onChange={(e) => {
-                    setToQuery(e.target.value);
+                    const value = e.target.value;
+                    const station = parseStationDisplay(value);
+                    setToQuery(value);
                     setToActiveIndex(-1);
-                    setSearchParams(prev => ({ ...prev, to: '', toName: '' }));
+                    setToStationError('');
+                    setSearchParams(prev => ({ ...prev, to: station?.code || '', toName: station ? value : '' }));
                   }}
                   role="combobox"
                   aria-autocomplete="list"

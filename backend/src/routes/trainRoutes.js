@@ -5,6 +5,9 @@ const {
   searchTrains,
   getTrainDirectory,
   getProviderSchedule,
+  getProviderCoachComposition,
+  getProviderSeatAvailability,
+  getProviderFare,
   getRouteStops,
   getReviews,
   addReview
@@ -14,6 +17,9 @@ const { protect } = require('../middleware/auth');
 router.get('/stations/autocomplete', autocompleteStations);
 router.get('/directory', getTrainDirectory);
 router.get('/external/:trainNumber/schedule', getProviderSchedule);
+router.get('/external/:trainNumber/coaches', getProviderCoachComposition);
+router.get('/external/:trainNumber/seats', getProviderSeatAvailability);
+router.get('/external/:trainNumber/fare', getProviderFare);
 router.get('/search', searchTrains);
 router.get('/:id/route', getRouteStops);
 router.get('/:id/reviews', getReviews);

@@ -261,7 +261,7 @@ TRAIN_DATA_PROVIDER=railradar
 RAILRADAR_API_KEY=your_api_key
 ```
 
-Provider access, API coverage and credentials must be verified separately.
+Provider access, API coverage and credentials must be verified separately. The external mode uses the RailRadar station directory and trains-between-stations timetable API; `GET /api/trains/directory` exposes its reserved-train directory, `GET /api/trains/external/:trainNumber/schedule` returns an individual schedule, and `GET /api/trains/external/:trainNumber/coaches` returns the provider's coach composition and berth-layout blueprint. Keep the key on the server and never put it in a `VITE_` variable. External coach layouts can be used for this app's local, simulated reservation flow: seats are held and booked only in this application's inventory, never in IRCTC. Local sample data remains available when `TRAIN_DATA_PROVIDER` is unset. Verify third-party timetable details with official railway sources before travel.
 
 ---
 

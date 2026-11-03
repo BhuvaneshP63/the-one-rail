@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const {
   createBookingOrder,
+  confirmExternalDemoBooking,
+  getExternalReservedSeats,
   verifyPaymentAndAllocate,
   cancelBooking,
   getBookingHistory,
@@ -19,6 +21,8 @@ router.post('/hold', protect, safe(inventory.holdSeats));
 router.post('/hold/:holdId/release', protect, safe(inventory.releaseHold));
 
 router.post('/create', protect, createBookingOrder);
+router.post('/external/confirm', protect, confirmExternalDemoBooking);
+router.get('/external/reserved', getExternalReservedSeats);
 router.post('/verify', protect, verifyPaymentAndAllocate);
 router.post('/:id/cancel', protect, cancelBooking);
 router.get('/history', protect, getBookingHistory);
