@@ -19,3 +19,6 @@ Thumbs.db
 
 # Codex build files
 .codex-build/
+
+.review-build/
+.Review Materials/
